@@ -1,7 +1,7 @@
 [project]
 name = "adlens"
 version = "0.1.0"
-description = "Creative intelligence: AI tags ad creatives and finds which features drive performance"
+description = "Inteligência de criativos: IA etiqueta criativos de anúncios e descobre quais características puxam a performance"
 readme = "README.md"
 authors = [
       { name = "Aryane Muniz", email = "186922399+AryaneMuniz@users.noreply.github.com" }
