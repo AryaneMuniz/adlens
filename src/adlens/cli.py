@@ -15,7 +15,7 @@ from adlens.confidence import bootstrap_lifts
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
 from adlens.report import THEMES, build_report, save_report
-from adlens.storage import load_performance, load_specs, save_specs
+from adlens.storage import load_dataset, load_specs, save_specs
 from adlens.synthetic import CreativeSpec, generate_specs
 from adlens.tagging import FakeTagger, PixelTagger, Tagger, tag_all
 
@@ -23,21 +23,14 @@ PASTA_PADRAO = Path("data")
 
 
 def _carregar(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow]] | None:
-    """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
-
-    Usa `etiquetas.csv` quando existe (o que o etiquetador viu); senão, cai
-    para `criativos.csv` (o gabarito). Devolve None se faltar algum arquivo.
-    """
-    etiquetas, gabarito = pasta / "etiquetas.csv", pasta / "criativos.csv"
-    fichas = etiquetas if etiquetas.exists() else gabarito
-    perf = pasta / "performance.csv"
-    if not fichas.exists() or not perf.exists():
-        print(
-            f"ERRO: Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
-        )
+    """Lê os dados da pasta; avisa e devolve None se faltar algum arquivo."""
+    try:
+        specs, rows, fonte = load_dataset(pasta)
+    except FileNotFoundError as erro:
+        print(f"ERRO: {erro}")
         return None
-    print(f"Usando as etiquetas de: {fichas.name}")
-    return load_specs(fichas), load_performance(perf)
+    print(f"Usando as etiquetas de: {fonte}")
+    return specs, rows
 
 
 def cmd_gerar(args: argparse.Namespace) -> int:

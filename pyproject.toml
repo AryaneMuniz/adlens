@@ -9,11 +9,13 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "duckdb>=2.0.0",
+    "mcp>=2.3.0",
     "pillow>=13.0.0",
 ]
 
 [project.scripts]
 adlens = "adlens.cli:main"
+adlens-mcp = "adlens.server:main"
 
 [build-system]
 requires = ["uv_build>=0.13.9,<0.14.0"]

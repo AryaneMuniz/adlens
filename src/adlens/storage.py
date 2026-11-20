@@ -60,3 +60,19 @@ def load_performance(path: Path) -> list[PerformanceRow]:
             )
             for row in csv.DictReader(f)
         ]
+
+
+def load_dataset(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
+    """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
+
+    Usa etiquetas.csv quando existe (o que o etiquetador viu); senão,
+    criativos.csv (o gabarito). Devolve também o nome do arquivo usado.
+    """
+    etiquetas, gabarito = pasta / "etiquetas.csv", pasta / "criativos.csv"
+    fichas = etiquetas if etiquetas.exists() else gabarito
+    perf = pasta / "performance.csv"
+    if not fichas.exists() or not perf.exists():
+        raise FileNotFoundError(
+            f"Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
+        )
+    return load_specs(fichas), load_performance(perf), fichas.name
