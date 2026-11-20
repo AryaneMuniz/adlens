@@ -2,7 +2,9 @@
 
 Exemplos:
     adlens gerar --n 500 --imagens
+    adlens etiquetar --etiquetador pixel
     adlens analisar
+    adlens relatorio
 """
 
 import argparse
@@ -10,13 +12,32 @@ import os
 from pathlib import Path
 
 from adlens.confidence import bootstrap_lifts
-from adlens.performance import save_csv, simulate_performance
+from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
 from adlens.report import THEMES, build_report, save_report
 from adlens.storage import load_performance, load_specs, save_specs
-from adlens.synthetic import generate_specs
+from adlens.synthetic import CreativeSpec, generate_specs
+from adlens.tagging import FakeTagger, PixelTagger, Tagger, tag_all
 
 PASTA_PADRAO = Path("data")
+
+
+def _carregar(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow]] | None:
+    """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
+
+    Usa `etiquetas.csv` quando existe (o que o etiquetador viu); senão, cai
+    para `criativos.csv` (o gabarito). Devolve None se faltar algum arquivo.
+    """
+    etiquetas, gabarito = pasta / "etiquetas.csv", pasta / "criativos.csv"
+    fichas = etiquetas if etiquetas.exists() else gabarito
+    perf = pasta / "performance.csv"
+    if not fichas.exists() or not perf.exists():
+        print(
+            f"ERRO: Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
+        )
+        return None
+    print(f"Usando as etiquetas de: {fichas.name}")
+    return load_specs(fichas), load_performance(perf)
 
 
 def cmd_gerar(args: argparse.Namespace) -> int:
@@ -25,6 +46,8 @@ def cmd_gerar(args: argparse.Namespace) -> int:
     specs = generate_specs(n=args.n, seed=args.seed)
     save_specs(specs, pasta / "criativos.csv")
     save_csv(simulate_performance(specs, seed=args.seed), pasta / "performance.csv")
+    # Dados novos: as etiquetas antigas não valem mais
+    (pasta / "etiquetas.csv").unlink(missing_ok=True)
     print(f"OK: {len(specs)} criativos e a performance salvos em {pasta.resolve()}")
     if args.imagens:
         render_all(specs, pasta / "imagens")
@@ -32,18 +55,40 @@ def cmd_gerar(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_analisar(args: argparse.Namespace) -> int:
-    """Lê os CSVs da pasta e mostra o lift de cada etiqueta."""
+def cmd_etiquetar(args: argparse.Namespace) -> int:
+    """Etiqueta os criativos da pasta e salva em etiquetas.csv."""
     pasta: Path = args.pasta
-    specs_csv, perf_csv = pasta / "criativos.csv", pasta / "performance.csv"
-    if not specs_csv.exists() or not perf_csv.exists():
-        print(
-            f"ERRO: Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
-        )
+    gabarito_csv, imagens = pasta / "criativos.csv", pasta / "imagens"
+    if not gabarito_csv.exists():
+        print("ERRO: Não achei os criativos. Rode antes: adlens gerar")
         return 1
-    resultados = bootstrap_lifts(
-        load_specs(specs_csv), load_performance(perf_csv), n_boot=args.boot
+    gabarito = load_specs(gabarito_csv)
+    tagger: Tagger
+    if args.etiquetador == "pixel":
+        if not imagens.exists():
+            print(
+                "ERRO: O etiquetador pixel precisa das imagens: adlens gerar --imagens"
+            )
+            return 1
+        tagger = PixelTagger()
+    else:
+        tagger = FakeTagger(gabarito, error_rate=args.erro, seed=args.seed)
+    etiquetas = tag_all(tagger, [s.creative_id for s in gabarito], imagens)
+    save_specs(etiquetas, pasta / "etiquetas.csv")
+    acertos = sum(e == g for e, g in zip(etiquetas, gabarito))
+    print(
+        f"OK: {len(etiquetas)} criativos etiquetados ({args.etiquetador}); "
+        f"{acertos / len(gabarito):.0%} com todas as etiquetas iguais ao gabarito"
     )
+    return 0
+
+
+def cmd_analisar(args: argparse.Namespace) -> int:
+    """Mostra o lift de cada etiqueta, com o intervalo de 95%."""
+    dados = _carregar(args.pasta)
+    if dados is None:
+        return 1
+    resultados = bootstrap_lifts(*dados, n_boot=args.boot)
     print(f"{'etiqueta':<10}{'valor':<12}{'lift':>8}   intervalo de 95%     real?")
     for r in resultados:
         faixa = f"[{r.low:+.1%} a {r.high:+.1%}]"
@@ -53,15 +98,12 @@ def cmd_analisar(args: argparse.Namespace) -> int:
 
 
 def cmd_relatorio(args: argparse.Namespace) -> int:
-    """Gera o relatório HTML a partir dos CSVs da pasta."""
+    """Gera o relatório HTML."""
     pasta: Path = args.pasta
-    specs_csv, perf_csv = pasta / "criativos.csv", pasta / "performance.csv"
-    if not specs_csv.exists() or not perf_csv.exists():
-        print(
-            f"ERRO: Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
-        )
+    dados = _carregar(pasta)
+    if dados is None:
         return 1
-    specs, rows = load_specs(specs_csv), load_performance(perf_csv)
+    specs, rows = dados
     intervalos = bootstrap_lifts(specs, rows, n_boot=args.boot)
     saida: Path = args.saida or pasta / "relatorio.html"
     # Até 8 imagens de exemplo, com o caminho relativo ao relatório
@@ -86,6 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     gerar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     gerar.add_argument("--imagens", action="store_true", help="desenha os PNGs")
     gerar.set_defaults(func=cmd_gerar)
+
+    etiquetar = sub.add_parser("etiquetar", help="etiqueta os criativos")
+    etiquetar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
+    etiquetar.add_argument("--etiquetador", choices=["pixel", "fake"], default="pixel")
+    etiquetar.add_argument("--erro", type=float, default=0.0, help="só no fake: 0 a 1")
+    etiquetar.add_argument("--seed", type=int, default=0)
+    etiquetar.set_defaults(func=cmd_etiquetar)
 
     analisar = sub.add_parser("analisar", help="calcula o lift de cada etiqueta")
     analisar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
