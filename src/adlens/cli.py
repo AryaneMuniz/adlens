@@ -5,6 +5,7 @@ Exemplos:
     adlens etiquetar --etiquetador pixel
     adlens analisar
     adlens relatorio
+    adlens exportar
 """
 
 import argparse
@@ -12,6 +13,7 @@ import os
 from pathlib import Path
 
 from adlens.confidence import bootstrap_lifts
+from adlens.export import export_all
 from adlens.media import save_media, simulate_media
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
@@ -109,6 +111,19 @@ def cmd_relatorio(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_exportar(args: argparse.Namespace) -> int:
+    """Exporta as tabelas do contrato de dados (prontas para o BigQuery)."""
+    pasta: Path = args.pasta
+    try:
+        arquivos = export_all(pasta, args.saida or pasta / "export", boot=args.boot)
+    except FileNotFoundError as erro:
+        print(f"ERRO: {erro}")
+        return 1
+    for arquivo in arquivos:
+        print(f"OK: {arquivo.resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -142,6 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
     relatorio.add_argument("--boot", type=int, default=300)
     relatorio.add_argument("--tema", choices=sorted(THEMES), default="neutro")
     relatorio.set_defaults(func=cmd_relatorio)
+
+    exportar = sub.add_parser("exportar", help="exporta as tabelas do contrato")
+    exportar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
+    exportar.add_argument("--saida", type=Path, help="padrão: PASTA/export")
+    exportar.add_argument("--boot", type=int, default=300)
+    exportar.set_defaults(func=cmd_exportar)
 
     return parser
 
