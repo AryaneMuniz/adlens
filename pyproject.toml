@@ -7,7 +7,9 @@ authors = [
       { name = "Aryane Muniz", email = "186922399+AryaneMuniz@users.noreply.github.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pillow>=13.0.0",
+]
 
 [project.scripts]
 adlens = "adlens:main"
