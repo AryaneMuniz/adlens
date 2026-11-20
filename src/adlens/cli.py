@@ -6,11 +6,13 @@ Exemplos:
 """
 
 import argparse
+import os
 from pathlib import Path
 
 from adlens.confidence import bootstrap_lifts
 from adlens.performance import save_csv, simulate_performance
 from adlens.render import render_all
+from adlens.report import THEMES, build_report, save_report
 from adlens.storage import load_performance, load_specs, save_specs
 from adlens.synthetic import generate_specs
 
@@ -50,6 +52,26 @@ def cmd_analisar(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_relatorio(args: argparse.Namespace) -> int:
+    """Gera o relatório HTML a partir dos CSVs da pasta."""
+    pasta: Path = args.pasta
+    specs_csv, perf_csv = pasta / "criativos.csv", pasta / "performance.csv"
+    if not specs_csv.exists() or not perf_csv.exists():
+        print(
+            f"ERRO: Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
+        )
+        return 1
+    specs, rows = load_specs(specs_csv), load_performance(perf_csv)
+    intervalos = bootstrap_lifts(specs, rows, n_boot=args.boot)
+    saida: Path = args.saida or pasta / "relatorio.html"
+    # Até 8 imagens de exemplo, com o caminho relativo ao relatório
+    pngs = sorted((pasta / "imagens").glob("*.png"))[:8]
+    imagens = [os.path.relpath(p, saida.parent).replace("\\", "/") for p in pngs]
+    html = build_report(intervalos, specs, rows, imagens, THEMES[args.tema])
+    print(f"OK: relatório salvo em {save_report(html, saida).resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -69,6 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
     analisar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     analisar.add_argument("--boot", type=int, default=300, help="sorteios do bootstrap")
     analisar.set_defaults(func=cmd_analisar)
+
+    relatorio = sub.add_parser("relatorio", help="gera o relatório HTML")
+    relatorio.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
+    relatorio.add_argument("--saida", type=Path, help="padrão: PASTA/relatorio.html")
+    relatorio.add_argument("--boot", type=int, default=300)
+    relatorio.add_argument("--tema", choices=sorted(THEMES), default="neutro")
+    relatorio.set_defaults(func=cmd_relatorio)
 
     return parser
 
