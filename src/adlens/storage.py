@@ -8,6 +8,7 @@ trocando só este módulo.
 import csv
 from pathlib import Path
 
+from adlens.media import performance_from_media
 from adlens.performance import PerformanceRow
 from adlens.synthetic import CreativeSpec
 
@@ -65,14 +66,17 @@ def load_performance(path: Path) -> list[PerformanceRow]:
 def load_dataset(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
     """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
 
-    Usa etiquetas.csv quando existe (o que o etiquetador viu); senão,
-    criativos.csv (o gabarito). Devolve também o nome do arquivo usado.
+    Etiquetas: etiquetas.csv quando existe (o que o etiquetador viu); senão,
+    criativos.csv (o gabarito). Performance: midia_diaria.csv somada por
+    anúncio quando existe; senão, performance.csv. Devolve também o nome do
+    arquivo de etiquetas usado.
     """
     etiquetas, gabarito = pasta / "etiquetas.csv", pasta / "criativos.csv"
     fichas = etiquetas if etiquetas.exists() else gabarito
-    perf = pasta / "performance.csv"
-    if not fichas.exists() or not perf.exists():
+    midia, perf = pasta / "midia_diaria.csv", pasta / "performance.csv"
+    if not fichas.exists() or not (midia.exists() or perf.exists()):
         raise FileNotFoundError(
             f"Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
         )
-    return load_specs(fichas), load_performance(perf), fichas.name
+    linhas = performance_from_media(midia) if midia.exists() else load_performance(perf)
+    return load_specs(fichas), linhas, fichas.name

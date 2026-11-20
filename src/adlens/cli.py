@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from adlens.confidence import bootstrap_lifts
+from adlens.media import save_media, simulate_media
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
 from adlens.report import THEMES, build_report, save_report
@@ -39,6 +40,7 @@ def cmd_gerar(args: argparse.Namespace) -> int:
     specs = generate_specs(n=args.n, seed=args.seed)
     save_specs(specs, pasta / "criativos.csv")
     save_csv(simulate_performance(specs, seed=args.seed), pasta / "performance.csv")
+    save_media(simulate_media(specs, seed=args.seed), pasta / "midia_diaria.csv")
     # Dados novos: as etiquetas antigas não valem mais
     (pasta / "etiquetas.csv").unlink(missing_ok=True)
     print(f"OK: {len(specs)} criativos e a performance salvos em {pasta.resolve()}")
