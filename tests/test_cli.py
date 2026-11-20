@@ -28,3 +28,16 @@ def test_analisar_sem_dados_avisa_e_retorna_erro(tmp_path, capsys):
     codigo = main(["analisar", "--pasta", str(tmp_path)])
     assert codigo == 1
     assert "adlens gerar" in capsys.readouterr().out
+
+
+def test_relatorio_gera_o_html(tmp_path):
+    main(["gerar", "--n", "200", "--pasta", str(tmp_path), "--imagens"])
+    codigo = main(["relatorio", "--pasta", str(tmp_path), "--boot", "20"])
+    html = (tmp_path / "relatorio.html").read_text(encoding="utf-8")
+    assert codigo == 0
+    assert "adlens · relatório de criativos" in html
+    assert 'src="imagens/CR0001.png"' in html
+
+
+def test_relatorio_sem_dados_retorna_erro(tmp_path):
+    assert main(["relatorio", "--pasta", str(tmp_path)]) == 1
