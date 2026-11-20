@@ -1,0 +1,29 @@
+# Robô do GitHub: confere o código a cada Pull Request e a cada push na main
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Instalar as dependências (igual ao uv.lock)
+        run: uv sync --locked
+
+      - name: Conferir a formatação
+        run: uv run ruff format --check .
+
+      - name: Conferir o padrão do código
+        run: uv run ruff check .
+
+      - name: Rodar os testes
+        run: uv run pytest
