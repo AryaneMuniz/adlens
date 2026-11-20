@@ -2,6 +2,7 @@
 
 import pytest
 
+from adlens.media import save_media, simulate_media
 from adlens.performance import save_csv, simulate_performance
 from adlens.storage import load_dataset, load_performance, load_specs, save_specs
 from adlens.synthetic import generate_specs
@@ -30,3 +31,11 @@ def test_load_dataset_usa_o_gabarito_se_nao_houver_etiquetas(tmp_path):
 def test_load_dataset_sem_arquivos_da_erro_claro(tmp_path):
     with pytest.raises(FileNotFoundError, match="adlens gerar"):
         load_dataset(tmp_path)
+
+
+def test_load_dataset_prefere_a_midia_diaria(tmp_path):
+    specs = generate_specs(n=15, seed=6)
+    save_specs(specs, tmp_path / "criativos.csv")
+    save_media(simulate_media(specs, seed=6), tmp_path / "midia_diaria.csv")
+    _, linhas, _ = load_dataset(tmp_path)
+    assert linhas == simulate_performance(specs, seed=6)

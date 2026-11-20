@@ -41,3 +41,8 @@ def test_relatorio_gera_o_html(tmp_path):
 
 def test_relatorio_sem_dados_retorna_erro(tmp_path):
     assert main(["relatorio", "--pasta", str(tmp_path)]) == 1
+
+
+def test_gerar_cria_a_midia_diaria(tmp_path):
+    main(["gerar", "--n", "10", "--pasta", str(tmp_path)])
+    assert (tmp_path / "midia_diaria.csv").exists()
