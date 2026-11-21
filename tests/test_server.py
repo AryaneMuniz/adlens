@@ -52,3 +52,12 @@ def test_gerar_relatorio_cria_o_arquivo(projeto):
 def test_pasta_fora_do_projeto_e_bloqueada(projeto):
     with pytest.raises(ValueError):
         resumo_dos_dados(pasta="../..")
+
+
+def test_efeito_diz_com_o_que_compara(projeto):
+    efeitos = {
+        (e["etiqueta"], e["valor"]): e for e in efeito_das_caracteristicas(sorteios=20)
+    }
+    assert efeitos[("rosto", "sim")]["referencia"] == "não"
+    assert efeitos[("cor", "vermelho")]["referencia"] == "azul"
+    assert efeitos[("formato", "vertical")]["referencia"] == "quadrado"
