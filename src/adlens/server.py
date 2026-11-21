@@ -27,6 +27,9 @@ mcp = MCPServer(
     ),
 )
 
+# Menos sorteios que isso dá intervalo errado; mais que isso trava o servidor
+MIN_SORTEIOS, MAX_SORTEIOS = 50, 2000
+
 
 # Com o que cada etiqueta é comparada: {"cor": "azul", "formato": "quadrado"}
 REFERENCIAS = {nome: ref for nome, ref in CATEGORICAL_TAGS.values()}
@@ -58,15 +61,21 @@ def resumo_dos_dados(pasta: str = "data") -> dict:
 
 
 @mcp.tool()
-def efeito_das_caracteristicas(pasta: str = "data", sorteios: int = 300) -> list[dict]:
+def efeito_das_caracteristicas(pasta: str = "data", sorteios: int = 200) -> list[dict]:
     """Quanto cada característica do criativo muda o CTR, com intervalo de 95%.
 
     `lift` é relativo à `referencia`: 0.15 quer dizer CTR 15% maior que o
     dos criativos de referência (sem a característica, cor azul ou formato
     quadrado). `significativo` é falso quando o intervalo cruza o zero:
-    nesse caso não dá para afirmar que o efeito existe.
+        nesse caso não dá para afirmar que o efeito existe. `sorteios` vai de
+    50 a 2000 (padrão 200).
     """
+    if not MIN_SORTEIOS <= sorteios <= MAX_SORTEIOS:
+        raise ValueError(
+            f"sorteios deve ficar entre {MIN_SORTEIOS} e {MAX_SORTEIOS} (recebi {sorteios})"
+        )
     specs, rows, _ = load_dataset(_pasta_segura(pasta))
+
     return [
         {
             "etiqueta": r.tag,
