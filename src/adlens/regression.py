@@ -28,10 +28,12 @@ from collections import Counter
 from dataclasses import dataclass
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
+from adlens.confidence import Interval, bootstrap_lifts
 from adlens.performance import PerformanceRow, simulate_performance
 from adlens.synthetic import CreativeSpec, generate_specs
 
 Z_95 = 1.959964  # 95% da curva normal fica entre -1,96 e +1,96
+METHODS = ("regressao", "simples")  # o padrão vem primeiro
 
 
 @dataclass(frozen=True)
@@ -202,6 +204,27 @@ def fit_effects(
         )
         for (c, b, se, p), p_adj in zip(found, adjusted)
     ]
+
+
+def compute_effects(
+    specs: list[CreativeSpec],
+    rows: list[PerformanceRow],
+    country: dict[str, str] | None = None,
+    method: str = "regressao",
+    n_boot: int = 200,
+) -> list[Interval]:
+    """O efeito de cada etiqueta pelo método escolhido. Todas as telas usam esta.
+
+    - "regressao" (padrão): isola cada etiqueta, controla o país, dá peso
+      igual a cada criativo e corrige para muitos testes. `n_boot` não é usado.
+    - "simples": a comparação de grupos com bootstrap (`n_boot` sorteios).
+      Fica para comparar e para ensinar onde ela erra (ver realistic.py).
+    """
+    if method == "regressao":
+        return list(fit_effects(specs, rows, country))
+    if method == "simples":
+        return list(bootstrap_lifts(specs, rows, n_boot=n_boot))
+    raise ValueError(f"Método desconhecido: {method}. Use um de: {', '.join(METHODS)}")
 
 
 if __name__ == "__main__":

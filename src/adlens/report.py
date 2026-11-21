@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-from adlens.confidence import LiftInterval
+from adlens.confidence import Interval
 from adlens.performance import PerformanceRow
 from adlens.synthetic import CreativeSpec
 
@@ -134,7 +134,7 @@ def _x(valor: float) -> float:
     return LARGURA / 2 + valor / ESCALA * (LARGURA / 2)
 
 
-def lift_chart(intervals: list[LiftInterval], theme: Theme = THEMES["neutro"]) -> str:
+def lift_chart(intervals: list[Interval], theme: Theme = THEMES["neutro"]) -> str:
     """Gráfico de barras (SVG) do lift, com o intervalo de 95% como uma linha."""
     ordenados = sorted(intervals, key=lambda r: r.lift, reverse=True)
     m = 150  # margem da esquerda, onde ficam os nomes
@@ -317,7 +317,7 @@ _JS = """
 """
 
 
-def _destaques(intervals: list[LiftInterval]) -> str:
+def _destaques(intervals: list[Interval]) -> str:
     """Os 3 maiores efeitos positivos e o maior negativo, entre os significativos."""
     reais = [r for r in intervals if r.significant]
     positivos = sorted((r for r in reais if r.lift > 0), key=lambda r: -r.lift)[:3]
@@ -369,7 +369,7 @@ def _chips_de_tipo(images: list[str]) -> str:
 
 
 def build_report(
-    intervals: list[LiftInterval],
+    intervals: list[Interval],
     specs: list[CreativeSpec],
     rows: list[PerformanceRow],
     images: list[str] | None = None,
@@ -461,12 +461,12 @@ pra confiar em cada resposta.</p>
 
 <section class="secao"><header><h2>Como ler</h2></header>
 <div class="como">
-<div><b>Lift</b><p>Quanto o CTR de quem tem a característica muda em relação à
-referência. +15% = CTR 15% maior.</p></div>
-<div><b>Intervalo de 95%</b><p>A faixa onde o efeito real provavelmente está,
-calculada sorteando os criativos centenas de vezes.</p></div>
-<div><b>Efeito real?</b><p>“Sim” quando o intervalo inteiro fica de um lado do
-zero. Se cruza o zero, pode ser ruído.</p></div>
+<div><b>Lift</b><p>Quanto o CTR muda com a característica, com todo o resto igual
+(mesmas outras etiquetas, mesmo país). +15% = CTR 15% maior.</p></div>
+<div><b>Intervalo de 95%</b><p>A faixa onde o efeito real provavelmente está.
+Se cruza o zero, pode ser ruído.</p></div>
+<div><b>Efeito real?</b><p>“Sim” só com prova forte: como várias etiquetas são
+testadas juntas, a exigência é maior que a do intervalo sozinho.</p></div>
 </div></section>
 </main>
 <footer>Gerado pelo adlens</footer>

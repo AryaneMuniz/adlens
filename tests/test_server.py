@@ -74,14 +74,29 @@ def test_sorteios_fora_do_limite_da_erro(projeto, sorteios):
 
 def test_efeito_traz_ctrs_e_tamanho_do_grupo(projeto):
     efeitos = {
-        (e["etiqueta"], e["valor"]): e for e in efeito_das_caracteristicas(sorteios=50)
+        (e["etiqueta"], e["valor"]): e
+        for e in efeito_das_caracteristicas(metodo="simples", sorteios=50)
     }
     rosto = efeitos[("rosto", "sim")]
     specs = load_specs(projeto / "data" / "criativos.csv")
     assert rosto["criativos"] == sum(s.has_face for s in specs)
-    # O lift é exatamente a conta entre os dois CTRs
+    # No simples, o lift é exatamente a conta entre os dois CTRs
     lift = rosto["ctr_grupo"] / rosto["ctr_referencia"] - 1
     assert lift == pytest.approx(rosto["lift"], abs=0.001)
+
+
+def test_regressao_e_o_padrao_e_fica_mais_perto_do_gabarito(projeto):
+    efeitos = {(e["etiqueta"], e["valor"]): e for e in efeito_das_caracteristicas()}
+    rosto = efeitos[("rosto", "sim")]
+    assert rosto["metodo"] == "regressao"
+    # A conta bruta mistura o rosto com as outras etiquetas; a regressão isola
+    bruto = rosto["ctr_grupo"] / rosto["ctr_referencia"] - 1
+    assert abs(rosto["lift"] - 0.15) < abs(bruto - 0.15)
+
+
+def test_metodo_desconhecido_da_erro(projeto):
+    with pytest.raises(ToolError, match="metodo"):
+        efeito_das_caracteristicas(metodo="chute")
 
 
 def test_pasta_sem_dados_explica_o_motivo(tmp_path, monkeypatch):
@@ -100,13 +115,13 @@ def test_ferramentas_de_consulta_sao_somente_leitura():
 
 def test_cache_nao_refaz_a_analise_sem_os_dados_mudarem(projeto, monkeypatch):
     chamadas = []
-    original = server.bootstrap_lifts
+    original = server.compute_effects
 
     def contando(*args, **kwargs):
         chamadas.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(server, "bootstrap_lifts", contando)
+    monkeypatch.setattr(server, "compute_effects", contando)
     server._cache.clear()
     primeira = efeito_das_caracteristicas(sorteios=50)
     segunda = efeito_das_caracteristicas(sorteios=50)

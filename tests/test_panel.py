@@ -3,7 +3,7 @@
 import pytest
 
 from adlens.cli import main as cli
-from adlens.panel import build_panel, latest_run, read_contract
+from adlens.panel import build_panel, latest_run, read_contract, to_intervals
 
 
 @pytest.fixture(scope="module")
@@ -61,3 +61,17 @@ def test_comando_painel(export, tmp_path):
     codigo = cli(["painel", "--pasta", str(export), "--saida", str(saida)])
     assert codigo == 0
     assert "adlens · painel de criativos" in saida.read_text(encoding="utf-8")
+
+
+def test_efeito_real_vem_pronto_do_contrato():
+    # Intervalo inteiro acima do zero, mas o contrato diz "não" (a correção
+    # para muitas etiquetas foi mais exigente): a página obedece o contrato
+    linha = {
+        "tag": "cor",
+        "value": "verde",
+        "lift": "0.02",
+        "ci_low": "0.001",
+        "ci_high": "0.04",
+        "significant": "false",
+    }
+    assert not to_intervals([linha])[0].significant

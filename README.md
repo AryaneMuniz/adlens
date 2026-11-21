@@ -25,7 +25,8 @@ performance ────────────────┘
 
 - **Dado sintético com gabarito:** criativos e performance são gerados por código com efeitos plantados (ex.: rosto = +15% de CTR). A análise não vê o gabarito e precisa redescobri-lo, o que prova que o sistema funciona. Nenhum dado de cliente entra neste repositório.
 - **Etiquetadores trocáveis (SOLID):** todo etiquetador segue o mesmo contrato. Hoje existem o `PixelTagger` (lê os pixels das imagens sintéticas) e o `FakeTagger` (gabarito com erro opcional, para testes). Um etiquetador com IA de visão entra sem mudar o resto.
-- **Honesto sobre a incerteza:** cada efeito vem com intervalo de 95% (bootstrap). Se o intervalo cruza o zero, o adlens avisa que não dá para afirmar o efeito.
+- **Efeito isolado (regressão):** o efeito de cada etiqueta é medido com todo o resto igual (outras etiquetas e país), cada criativo vale 1 voto e a correção de Benjamini-Hochberg evita alarme falso quando muitas etiquetas são testadas juntas. A comparação simples continua disponível com `--metodo simples`, para mostrar onde ela erra (`uv run python -m adlens.realistic`).
+- **Honesto sobre a incerteza:** cada efeito vem com intervalo de 95%. Se não dá para afirmar o efeito, o adlens avisa.
 
 ## Como rodar
 
@@ -38,7 +39,7 @@ uv sync
 
 uv run adlens gerar --n 1000 --imagens   # cria criativos, performance e imagens
 uv run adlens etiquetar                  # etiqueta as imagens
-uv run adlens analisar                   # mostra o lift de cada etiqueta
+uv run adlens analisar                   # mostra o lift de cada etiqueta (regressão)
 uv run adlens relatorio                  # gera data/relatorio.html
 uv run adlens exportar                   # tabelas do contrato em data/export/
 uv run adlens painel                     # página com filtros (rascunho do Hub)
@@ -76,7 +77,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Etiquetador com IA de visão (ClaudeTagger; precisão real a medir quando houver chave)
 - [x] Simulação realista com as armadilhas do dado de verdade
 - [x] Regressão: efeito isolado de cada etiqueta, controlando país, peso igual por criativo e correção para muitos testes
-- [ ] Regressão ligada ao relatório, ao MCP e ao hub
+- [x] Regressão ligada à linha de comando, ao relatório, ao contrato, ao MCP e ao hub
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora
