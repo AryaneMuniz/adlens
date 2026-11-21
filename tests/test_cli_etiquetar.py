@@ -47,3 +47,22 @@ def test_gerar_de_novo_apaga_etiquetas_antigas(tmp_path):
     main(["etiquetar", "--pasta", str(tmp_path), "--etiquetador", "fake"])
     main(["gerar", "--n", "20", "--pasta", str(tmp_path)])
     assert not (tmp_path / "etiquetas.csv").exists()
+
+
+def test_amostra_mede_precisao_sem_salvar_etiquetas(tmp_path, capsys):
+    main(["gerar", "--n", "30", "--pasta", str(tmp_path)])
+    capsys.readouterr()
+    argv = ["etiquetar", "--pasta", str(tmp_path), "--etiquetador", "fake"]
+    assert main([*argv, "--amostra", "10"]) == 0
+    saida = capsys.readouterr().out
+    assert "amostra de 10" in saida
+    assert "100%" in saida
+    assert not (tmp_path / "etiquetas.csv").exists()
+
+
+def test_claude_sem_chave_avisa(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    main(["gerar", "--n", "5", "--pasta", str(tmp_path), "--imagens"])
+    argv = ["etiquetar", "--pasta", str(tmp_path), "--etiquetador", "claude"]
+    assert main(argv) == 1
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().out

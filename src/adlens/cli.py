@@ -3,6 +3,7 @@
 Exemplos:
     adlens gerar --n 500 --imagens
     adlens etiquetar --etiquetador pixel
+    adlens etiquetar --etiquetador claude --amostra 20
     adlens analisar
     adlens relatorio
     adlens exportar
@@ -14,6 +15,9 @@ import argparse
 import os
 from pathlib import Path
 
+from anthropic import AnthropicError
+
+from adlens.claude_tagger import ClaudeTagger, TaggingError
 from adlens.confidence import bootstrap_lifts
 from adlens.export import export_all
 from adlens.hub import publish_hub
@@ -24,7 +28,13 @@ from adlens.render import render_all
 from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
 from adlens.storage import load_dataset, load_specs, save_specs
 from adlens.synthetic import CreativeSpec, generate_specs
-from adlens.tagging import FakeTagger, PixelTagger, Tagger, tag_all
+from adlens.tagging import (
+    FakeTagger,
+    PixelTagger,
+    Tagger,
+    accuracy_by_tag,
+    tag_all,
+)
 
 PASTA_PADRAO = Path("data")
 EXTENSOES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov"}
@@ -65,23 +75,50 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
         print("ERRO: Não achei os criativos. Rode antes: adlens gerar")
         return 1
     gabarito = load_specs(gabarito_csv)
+    if args.etiquetador != "fake" and not imagens.exists():
+        print(
+            f"ERRO: O etiquetador {args.etiquetador} precisa das imagens: "
+            "adlens gerar --imagens"
+        )
+        return 1
     tagger: Tagger
     if args.etiquetador == "pixel":
-        if not imagens.exists():
+        tagger = PixelTagger()
+    elif args.etiquetador == "claude":
+        if not os.environ.get("ANTHROPIC_API_KEY"):
             print(
-                "ERRO: O etiquetador pixel precisa das imagens: adlens gerar --imagens"
+                "ERRO: O etiquetador claude precisa de uma chave de API na "
+                "variável ANTHROPIC_API_KEY (nunca escreva a chave no código)."
             )
             return 1
-        tagger = PixelTagger()
+        tagger = ClaudeTagger(cache_path=pasta / "cache_claude.jsonl")
     else:
         tagger = FakeTagger(gabarito, error_rate=args.erro, seed=args.seed)
-    etiquetas = tag_all(tagger, [s.creative_id for s in gabarito], imagens)
-    save_specs(etiquetas, pasta / "etiquetas.csv")
-    acertos = sum(e == g for e, g in zip(etiquetas, gabarito))
-    print(
-        f"OK: {len(etiquetas)} criativos etiquetados ({args.etiquetador}); "
-        f"{acertos / len(gabarito):.0%} com todas as etiquetas iguais ao gabarito"
-    )
+
+    # Amostra: etiqueta só os N primeiros para medir a precisão antes de
+    # pagar por tudo. Nesse caso NÃO salva etiquetas.csv (ficaria incompleto).
+    alvo = gabarito[: args.amostra] if args.amostra > 0 else gabarito
+    try:
+        etiquetas = tag_all(tagger, [s.creative_id for s in alvo], imagens)
+    except (TaggingError, AnthropicError) as erro:
+        print(f"ERRO: a IA não conseguiu etiquetar: {erro}")
+        return 1
+
+    if args.amostra > 0:
+        print(f"OK: amostra de {len(etiquetas)} criativos ({args.etiquetador}).")
+    else:
+        save_specs(etiquetas, pasta / "etiquetas.csv")
+        print(f"OK: {len(etiquetas)} criativos etiquetados ({args.etiquetador}).")
+    print("Precisão de cada etiqueta (comparada com o gabarito):")
+    for campo, precisao in accuracy_by_tag(etiquetas, alvo).items():
+        print(f"  {campo:<16}{precisao:>6.0%}")
+    if isinstance(tagger, ClaudeTagger):
+        print(f"Vindos do cache (sem custo): {tagger.cache_hits}")
+        for modelo, uso in tagger.usage.items():
+            print(
+                f"  {modelo}: {uso.calls} chamadas, {uso.input_tokens} tokens de "
+                f"entrada, {uso.output_tokens} de saída"
+            )
     return 0
 
 
@@ -174,9 +211,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     etiquetar = sub.add_parser("etiquetar", help="etiqueta os criativos")
     etiquetar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
-    etiquetar.add_argument("--etiquetador", choices=["pixel", "fake"], default="pixel")
+    etiquetar.add_argument(
+        "--etiquetador", choices=["pixel", "fake", "claude"], default="pixel"
+    )
     etiquetar.add_argument("--erro", type=float, default=0.0, help="só no fake: 0 a 1")
     etiquetar.add_argument("--seed", type=int, default=0)
+    etiquetar.add_argument(
+        "--amostra", type=int, default=0, help="só mede a precisão nos N primeiros"
+    )
     etiquetar.set_defaults(func=cmd_etiquetar)
 
     analisar = sub.add_parser("analisar", help="calcula o lift de cada etiqueta")

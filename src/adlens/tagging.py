@@ -6,7 +6,7 @@ então dá pra trocar o etiquetador sem mexer em mais nada (o "D" do SOLID):
 
 - FakeTagger: copia o gabarito, com erros de propósito se pedir. Para testes.
 - PixelTagger: olha os pixels das imagens sintéticas do adlens. Sem custo.
-- (futuro) ClaudeTagger: manda a imagem para a IA de visão do Claude.
+- ClaudeTagger (em claude_tagger.py): usa a IA de visão do Claude.
 """
 
 import random
@@ -82,7 +82,7 @@ class PixelTagger:
             has_product=colors.get(CAP, 0) >= self.MIN_PIXELS,
             has_cta=bottom_colors.get(WHITE, 0) >= self.MIN_PIXELS,
             dominant_color=_nearest_color(corner),
-            format=_format_of(width, height),
+            format=format_of(width, height),
         )
 
 
@@ -91,7 +91,7 @@ def _nearest_color(rgb: tuple[int, int, int]) -> str:
     return min(RGB, key=lambda name: sum((a - b) ** 2 for a, b in zip(RGB[name], rgb)))
 
 
-def _format_of(width: int, height: int) -> str:
+def format_of(width: int, height: int) -> str:
     if width == height:
         return "quadrado"
     return "vertical" if height > width else "horizontal"
@@ -102,3 +102,20 @@ def tag_all(
 ) -> list[CreativeSpec]:
     """Etiqueta todos os criativos de uma pasta de imagens."""
     return [tagger.tag(image_dir / f"{cid}.png", cid) for cid in creative_ids]
+
+
+TAG_FIELDS = ("has_face", "has_product", "has_cta", "dominant_color", "format")
+
+
+def accuracy_by_tag(
+    tags: list[CreativeSpec], answers: list[CreativeSpec]
+) -> dict[str, float]:
+    """A precisão de cada etiqueta: a fração de criativos igual ao gabarito."""
+    by_id = {a.creative_id: a for a in answers}
+    return {
+        field: sum(
+            getattr(t, field) == getattr(by_id[t.creative_id], field) for t in tags
+        )
+        / len(tags)
+        for field in TAG_FIELDS
+    }
