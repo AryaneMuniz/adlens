@@ -16,6 +16,7 @@ from mcp.types import ToolAnnotations
 
 from adlens.analysis import TagLift, analyze, build_database
 from adlens.confidence import Interval
+from adlens.explore import RANK_BY, compare_effects, tag_distribution, top_creatives
 from adlens.filters import Filter, parse_filter
 from adlens.media import available_values
 from adlens.performance import PerformanceRow
@@ -34,7 +35,10 @@ mcp = MCPServer(
         "cada etiqueta e controla o país. Para perguntas sobre um país, uma "
         "plataforma ou um período, use os filtros (pais, plataforma, "
         "data_inicio, data_fim); resumo_dos_dados lista o que existe para "
-        "filtrar. Os dados de demonstração são sintéticos."
+        "filtrar. Para saber se um grupo é grande o bastante, use "
+        "distribuicao_das_etiquetas; para exemplos concretos, top_criativos; "
+        'para "o efeito é igual no país A e no B?", comparar. '
+        "Os dados de demonstração são sintéticos."
     ),
 )
 
@@ -44,8 +48,13 @@ MIN_SORTEIOS, MAX_SORTEIOS = 50, 2000
 # Avisa o agente que a ferramenta só LÊ: ele pode chamar sem pedir licença
 SO_LEITURA = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
-# Guarda a última análise: perguntar de novo, sem os dados mudarem, é instantâneo
+# Guarda as últimas análises: perguntar de novo, sem os dados mudarem, é
+# instantâneo. Guarda 4 (e não 1) porque o comparar faz duas de uma vez.
 _cache: dict[tuple, tuple] = {}
+MAX_CACHE = 4
+
+# O ranking devolve no máximo isso: o agente não precisa de mil linhas
+MAX_RANKING = 50
 
 
 def _pasta_segura(pasta: str) -> Path:
@@ -92,7 +101,8 @@ def _analise(
     chave = (str(base), carimbo, metodo, sorteios, filtro)
     if chave not in _cache:
         specs, rows, _ = _carregar(base, filtro)
-        _cache.clear()  # só a última análise: a memória não cresce sem parar
+        if len(_cache) >= MAX_CACHE:  # tira a mais antiga: a memória não cresce
+            del _cache[next(iter(_cache))]
         try:
             efeitos = compute_effects(
                 specs, rows, load_countries(base), metodo, sorteios
@@ -202,6 +212,163 @@ def efeito_das_caracteristicas(
                 "metodo": metodo,
                 "recorte": filtro.describe(),
             }
+        )
+    return resultado
+
+
+@mcp.tool(annotations=SO_LEITURA)
+def distribuicao_das_etiquetas(
+    pasta: str = "data",
+    pais: str = "",
+    plataforma: str = "",
+    data_inicio: str = "",
+    data_fim: str = "",
+) -> list[dict]:
+    """Quantos criativos têm cada etiqueta, e quanta mídia eles levaram.
+
+    Use antes de tirar conclusões: grupo com poucos criativos dá resultado
+    frágil, e etiqueta presente em quase todas as peças não tem com quem
+    comparar. `pct_criativos` e `pct_impressoes` são fatias de 0 a 1; se a
+    de impressões for bem maior que a de criativos, a mídia está concentrada
+    nesse grupo. `ctr` é o CTR bruto do grupo. Aceita os mesmos filtros do
+    resumo_dos_dados.
+    """
+    filtro = _filtro(pais, plataforma, data_inicio, data_fim)
+    specs, rows, _ = _carregar(_pasta_segura(pasta), filtro)
+    return [
+        {
+            "etiqueta": d.tag,
+            "valor": d.value,
+            "criativos": d.creatives,
+            "pct_criativos": round(d.share_creatives, 4),
+            "impressoes": d.impressions,
+            "pct_impressoes": round(d.share_impressions, 4),
+            "ctr": round(d.ctr, 5),
+            "recorte": filtro.describe(),
+        }
+        for d in tag_distribution(specs, rows)
+    ]
+
+
+@mcp.tool(annotations=SO_LEITURA)
+def top_criativos(
+    pasta: str = "data",
+    ordenar_por: str = "ctr",
+    quantidade: int = 10,
+    minimo_impressoes: int = 1000,
+    piores: bool = False,
+    pais: str = "",
+    plataforma: str = "",
+    data_inicio: str = "",
+    data_fim: str = "",
+) -> list[dict]:
+    """Os melhores (ou, com piores=true, os piores) criativos, com as etiquetas.
+
+    `ordenar_por`: ctr (padrão), impressoes, cliques ou investimento.
+    `quantidade`: de 1 a 50 (padrão 10). `minimo_impressoes` (padrão 1000)
+    tira quem quase não rodou: com pouca entrega, CTR alto é sorte. Útil
+    para mostrar exemplos concretos de um efeito, mas um ranking NÃO prova
+    efeito: para isso use efeito_das_caracteristicas. Aceita os mesmos
+    filtros do resumo_dos_dados.
+    """
+    if ordenar_por not in RANK_BY:
+        raise ToolError(
+            f"ordenar_por deve ser um de: {', '.join(RANK_BY)} (recebi {ordenar_por})"
+        )
+    if not 1 <= quantidade <= MAX_RANKING:
+        raise ToolError(
+            f"quantidade deve ficar entre 1 e {MAX_RANKING} (recebi {quantidade})"
+        )
+    if minimo_impressoes < 0:
+        raise ToolError("minimo_impressoes não pode ser negativo")
+    filtro = _filtro(pais, plataforma, data_inicio, data_fim)
+    specs, rows, _ = _carregar(_pasta_segura(pasta), filtro)
+    ranking = top_creatives(
+        specs, rows, ordenar_por, quantidade, minimo_impressoes, piores
+    )
+    if not ranking:
+        raise ToolError(
+            f"Nenhum criativo com pelo menos {minimo_impressoes} impressões "
+            f"({filtro.describe()}). Diminua o minimo_impressoes."
+        )
+    return [
+        {
+            "posicao": i,
+            "criativo": c.creative_id,
+            "etiquetas": c.tags,
+            "impressoes": c.impressions,
+            "cliques": c.clicks,
+            "ctr": round(c.ctr, 5),
+            "investimento": round(c.spend, 2),
+            "recorte": filtro.describe(),
+        }
+        for i, c in enumerate(ranking, start=1)
+    ]
+
+
+@mcp.tool(annotations=SO_LEITURA)
+def comparar(
+    pasta: str = "data",
+    a_pais: str = "",
+    a_plataforma: str = "",
+    a_data_inicio: str = "",
+    a_data_fim: str = "",
+    b_pais: str = "",
+    b_plataforma: str = "",
+    b_data_inicio: str = "",
+    b_data_fim: str = "",
+    metodo: str = "regressao",
+) -> dict:
+    """Compara o efeito de cada etiqueta entre dois recortes, A e B.
+
+    Ex.: "o rosto funciona igual no Brasil e no México?" = a_pais="BR",
+    b_pais="MX". Cada recorte usa os mesmos filtros do resumo_dos_dados,
+    com o prefixo a_ ou b_. Para cada etiqueta: `lift_a`, `lift_b` e
+    `diferente` (se a diferença é real, já corrigida para muitas etiquetas
+    testadas de uma vez). `diferente` falso NÃO quer dizer "igual": pode ser
+    só falta de dado. `criativos_em_comum` acima de zero (comum ao comparar
+    períodos) deixa o teste otimista; o `aviso` diz quando isso acontece.
+    """
+    if metodo not in METHODS:
+        raise ToolError(
+            f"metodo deve ser um de: {', '.join(METHODS)} (recebi {metodo})"
+        )
+    filtro_a = _filtro(a_pais, a_plataforma, a_data_inicio, a_data_fim)
+    filtro_b = _filtro(b_pais, b_plataforma, b_data_inicio, b_data_fim)
+    if filtro_a == filtro_b:
+        raise ToolError(
+            "Os recortes A e B são iguais. Mude ao menos um filtro, "
+            'ex.: a_pais="BR" e b_pais="MX".'
+        )
+    base = _pasta_segura(pasta)
+    specs_a, _, efeitos_a, _ = _analise(base, metodo, 200, filtro_a)
+    specs_b, _, efeitos_b, _ = _analise(base, metodo, 200, filtro_b)
+    em_comum = {s.creative_id for s in specs_a} & {s.creative_id for s in specs_b}
+    resultado = {
+        "recorte_a": filtro_a.describe(),
+        "recorte_b": filtro_b.describe(),
+        "criativos_a": len(specs_a),
+        "criativos_b": len(specs_b),
+        "criativos_em_comum": len(em_comum),
+        "metodo": metodo,
+        "etiquetas": [
+            {
+                "etiqueta": c.tag,
+                "valor": c.value,
+                "lift_a": round(c.lift_a, 4),
+                "lift_b": round(c.lift_b, 4),
+                "diferenca": round(c.lift_a - c.lift_b, 4),
+                "diferente": c.different,
+                "p_corrigido": round(c.p_adjusted, 4),
+            }
+            for c in compare_effects(efeitos_a, efeitos_b)
+        ],
+    }
+    if em_comum:
+        resultado["aviso"] = (
+            f"{len(em_comum)} criativos estão nos dois recortes: o teste supõe "
+            "recortes independentes e fica otimista (pode apontar diferença "
+            "que não existe)."
         )
     return resultado
 

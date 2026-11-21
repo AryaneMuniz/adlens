@@ -8,10 +8,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from adlens import server
 from adlens.cli import main as cli
 from adlens.server import (
+    comparar,
+    distribuicao_das_etiquetas,
     efeito_das_caracteristicas,
     gerar_relatorio,
     mcp,
     resumo_dos_dados,
+    top_criativos,
 )
 from adlens.storage import load_specs
 
@@ -24,12 +27,15 @@ def projeto(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_servidor_oferece_as_tres_ferramentas():
+def test_servidor_oferece_as_seis_ferramentas():
     nomes = {t.name for t in asyncio.run(mcp.list_tools())}
     assert nomes == {
         "resumo_dos_dados",
         "efeito_das_caracteristicas",
         "gerar_relatorio",
+        "distribuicao_das_etiquetas",
+        "top_criativos",
+        "comparar",
     }
 
 
@@ -109,6 +115,8 @@ def test_ferramentas_de_consulta_sao_somente_leitura():
     marcas = {t.name: t.annotations for t in asyncio.run(mcp.list_tools())}
     assert marcas["resumo_dos_dados"].read_only_hint is True
     assert marcas["efeito_das_caracteristicas"].read_only_hint is True
+    for nova in ("distribuicao_das_etiquetas", "top_criativos", "comparar"):
+        assert marcas[nova].read_only_hint is True
     assert marcas["gerar_relatorio"].read_only_hint is False
     assert marcas["gerar_relatorio"].destructive_hint is False
 
@@ -159,3 +167,57 @@ def test_filtro_errado_explica_para_o_agente(projeto):
         efeito_das_caracteristicas(data_inicio="ontem")
     with pytest.raises(ToolError, match="Disponíveis"):
         resumo_dos_dados(pais="XX")
+
+
+# --- ferramentas da Aula 29 (#33) -------------------------------------------
+
+
+def test_distribuicao_conta_todos_os_criativos_em_cada_etiqueta(projeto):
+    linhas = distribuicao_das_etiquetas()
+    rosto = [linha for linha in linhas if linha["etiqueta"] == "rosto"]
+    assert sum(linha["criativos"] for linha in rosto) == 300
+    assert {linha["valor"] for linha in rosto} == {"sim", "não"}
+
+
+def test_distribuicao_aceita_filtro(projeto):
+    linhas = distribuicao_das_etiquetas(pais="BR,MX")
+    rosto = [linha for linha in linhas if linha["etiqueta"] == "rosto"]
+    assert 0 < sum(linha["criativos"] for linha in rosto) < 300
+    assert linhas[0]["recorte"] == "país BR, MX"
+
+
+def test_top_criativos_traz_etiquetas_e_vem_ordenado(projeto):
+    ranking = top_criativos(quantidade=5)
+    assert [r["posicao"] for r in ranking] == [1, 2, 3, 4, 5]
+    ctrs = [r["ctr"] for r in ranking]
+    assert ctrs == sorted(ctrs, reverse=True)
+    assert set(ranking[0]["etiquetas"]) == {"rosto", "produto", "cta", "cor", "formato"}
+
+
+def test_top_criativos_valida_os_parametros(projeto):
+    with pytest.raises(ToolError, match="ordenar_por"):
+        top_criativos(ordenar_por="roas")
+    with pytest.raises(ToolError, match="entre 1 e 50"):
+        top_criativos(quantidade=500)
+    with pytest.raises(ToolError, match="Diminua o minimo_impressoes"):
+        top_criativos(minimo_impressoes=10_000_000)
+
+
+def test_comparar_paises_sem_diferenca_plantada_nao_acusa_diferenca(projeto):
+    # No dado sintético, o efeito de cada etiqueta é o mesmo em todo país
+    resultado = comparar(a_plataforma="meta,google", b_plataforma="tiktok,dv360")
+    assert resultado["criativos_em_comum"] == 0
+    assert "aviso" not in resultado
+    assert resultado["etiquetas"]
+    assert not any(e["diferente"] for e in resultado["etiquetas"])
+
+
+def test_comparar_periodos_avisa_sobre_criativos_em_comum(projeto):
+    resultado = comparar(a_data_fim="2026-10-15", b_data_inicio="2026-10-16")
+    assert resultado["criativos_em_comum"] > 0
+    assert "otimista" in resultado["aviso"]
+
+
+def test_comparar_recortes_iguais_e_erro(projeto):
+    with pytest.raises(ToolError, match="são iguais"):
+        comparar(a_pais="BR", b_pais="br")
