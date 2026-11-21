@@ -11,11 +11,15 @@ Rodar: uv run adlens-mcp   (o agente conversa com ele pelo stdin/stdout)
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
-from adlens.analysis import CATEGORICAL_TAGS
-from adlens.confidence import bootstrap_lifts
+from adlens.analysis import TagLift, analyze, build_database
+from adlens.confidence import LiftInterval, bootstrap_lifts
+from adlens.performance import PerformanceRow
 from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
 from adlens.storage import load_dataset
+from adlens.synthetic import CreativeSpec
 
 mcp = MCPServer(
     "adlens",
@@ -30,9 +34,11 @@ mcp = MCPServer(
 # Menos sorteios que isso dá intervalo errado; mais que isso trava o servidor
 MIN_SORTEIOS, MAX_SORTEIOS = 50, 2000
 
+# Avisa o agente que a ferramenta só LÊ: ele pode chamar sem pedir licença
+SO_LEITURA = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
-# Com o que cada etiqueta é comparada: {"cor": "azul", "formato": "quadrado"}
-REFERENCIAS = {nome: ref for nome, ref in CATEGORICAL_TAGS.values()}
+# Guarda a última análise: perguntar de novo, sem os dados mudarem, é instantâneo
+_cache: dict[tuple, tuple] = {}
 
 
 def _pasta_segura(pasta: str) -> Path:
@@ -40,14 +46,45 @@ def _pasta_segura(pasta: str) -> Path:
     base = Path.cwd().resolve()
     caminho = (base / pasta).resolve()
     if not caminho.is_relative_to(base):
-        raise ValueError(f"Pasta fora do projeto não é permitida: {pasta}")
+        raise ToolError(f"Pasta fora do projeto não é permitida: {pasta}")
     return caminho
 
 
-@mcp.tool()
+def _carregar(base: Path) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
+    """Lê os dados e, se der errado, explica o motivo para o agente.
+
+    Sem isso, o agente recebe só "Error executing tool" e não sabe o que fazer.
+    """
+    try:
+        return load_dataset(base)
+    except FileNotFoundError as erro:
+        raise ToolError(f"{erro}. Rode antes: adlens gerar") from erro
+    except ValueError as erro:
+        raise ToolError(f"Os dados têm um problema: {erro}") from erro
+
+
+def _analise(
+    base: Path, sorteios: int
+) -> tuple[list[CreativeSpec], list[PerformanceRow], list[LiftInterval], list[TagLift]]:
+    """A análise completa, guardada até algum CSV da pasta mudar."""
+    carimbo = tuple((p.name, p.stat().st_mtime_ns) for p in sorted(base.glob("*.csv")))
+    chave = (str(base), carimbo, sorteios)
+    if chave not in _cache:
+        specs, rows, _ = _carregar(base)
+        _cache.clear()  # só a última análise: a memória não cresce sem parar
+        _cache[chave] = (
+            specs,
+            rows,
+            bootstrap_lifts(specs, rows, n_boot=sorteios),
+            analyze(build_database(specs, rows)),
+        )
+    return _cache[chave]
+
+
+@mcp.tool(annotations=SO_LEITURA)
 def resumo_dos_dados(pasta: str = "data") -> dict:
     """Resumo dos dados: quantos criativos, impressões, cliques, CTR e investimento."""
-    specs, rows, fonte = load_dataset(_pasta_segura(pasta))
+    specs, rows, fonte = _carregar(_pasta_segura(pasta))
     impressoes = sum(r.impressions for r in rows)
     cliques = sum(r.clicks for r in rows)
     return {
@@ -60,47 +97,57 @@ def resumo_dos_dados(pasta: str = "data") -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=SO_LEITURA)
 def efeito_das_caracteristicas(pasta: str = "data", sorteios: int = 200) -> list[dict]:
     """Quanto cada característica do criativo muda o CTR, com intervalo de 95%.
 
     `lift` é relativo à `referencia`: 0.15 quer dizer CTR 15% maior que o
     dos criativos de referência (sem a característica, cor azul ou formato
-    quadrado). `significativo` é falso quando o intervalo cruza o zero:
-        nesse caso não dá para afirmar que o efeito existe. `sorteios` vai de
-    50 a 2000 (padrão 200).
+    quadrado). `ctr_grupo` e `ctr_referencia` são os CTRs dos dois lados da
+    comparação, e `criativos` é quantos criativos estão no grupo: grupo
+    pequeno = resultado menos confiável. `significativo` é falso quando o
+    intervalo cruza o zero: nesse caso não dá para afirmar que o efeito
+    existe. `sorteios` vai de 50 a 2000 (padrão 200).
     """
     if not MIN_SORTEIOS <= sorteios <= MAX_SORTEIOS:
-        raise ValueError(
+        raise ToolError(
             f"sorteios deve ficar entre {MIN_SORTEIOS} e {MAX_SORTEIOS} (recebi {sorteios})"
         )
-    specs, rows, _ = load_dataset(_pasta_segura(pasta))
+    _, _, intervalos, pontos = _analise(_pasta_segura(pasta), sorteios)
+    grupos = {(p.tag, p.value): p for p in pontos}
 
-    return [
-        {
-            "etiqueta": r.tag,
-            "valor": r.value,
-            "referencia": REFERENCIAS.get(r.tag, "não"),
-            "lift": round(r.lift, 4),
-            "intervalo_95": [round(r.low, 4), round(r.high, 4)],
-            "significativo": r.significant,
-        }
-        for r in sorted(
-            bootstrap_lifts(specs, rows, n_boot=sorteios),
-            key=lambda r: r.lift,
-            reverse=True,
+    resultado = []
+    for r in sorted(intervalos, key=lambda r: r.lift, reverse=True):
+        g = grupos[(r.tag, r.value)]
+        resultado.append(
+            {
+                "etiqueta": r.tag,
+                "valor": r.value,
+                "referencia": g.reference,
+                "lift": round(r.lift, 4),
+                "intervalo_95": [round(r.low, 4), round(r.high, 4)],
+                "significativo": r.significant,
+                "ctr_grupo": round(g.ctr, 5),
+                "ctr_referencia": round(g.ctr_reference, 5),
+                "criativos": g.creatives,
+            }
         )
-    ]
+    return resultado
 
 
-@mcp.tool()
-def gerar_relatorio(pasta: str = "data") -> str:
-    """Gera o relatório HTML da análise e devolve o caminho do arquivo."""
-    base = _pasta_segura(pasta)
-    specs, rows, _ = load_dataset(base)
-    html = build_report(
-        bootstrap_lifts(specs, rows), specs, rows, None, THEMES[TEMA_PADRAO]
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False,  # grava um arquivo...
+        destructiveHint=False,  # ...mas não apaga nada dos dados
+        idempotentHint=True,  # rodar duas vezes dá o mesmo resultado
+        openWorldHint=False,
     )
+)
+def gerar_relatorio(pasta: str = "data") -> str:
+    """Gera (ou atualiza) o relatório HTML da análise e devolve o caminho do arquivo."""
+    base = _pasta_segura(pasta)
+    specs, rows, intervalos, _ = _analise(base, 200)
+    html = build_report(intervalos, specs, rows, None, THEMES[TEMA_PADRAO])
     return str(save_report(html, base / "relatorio.html"))
 
 

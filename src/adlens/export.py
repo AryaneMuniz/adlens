@@ -138,10 +138,29 @@ def build_exports(
     return criativos, efeitos
 
 
+# Se uma célula de texto começa com um destes, o Excel acha que é fórmula
+INICIO_DE_FORMULA = ("=", "+", "-", "@", "\t", "\r")
+
+
+def seguro_para_excel(texto: str) -> str:
+    """Desarma texto que o Excel executaria como fórmula.
+
+    Um nome de anúncio como `=HYPERLINK("site-falso", "clique")` vira link
+    (ou coisa pior) quando alguém abre o CSV no Excel. Com um apóstrofo na
+    frente, o Excel mostra o texto como texto.
+    """
+    return "'" + texto if texto.startswith(INICIO_DE_FORMULA) else texto
+
+
 def _valor(v):
-    """Formata para CSV do jeito que o BigQuery entende (true/false, vazio)."""
+    """Formata para CSV do jeito que o BigQuery entende (true/false, vazio).
+
+    Só TEXTO é desarmado: números negativos (lift -0.05) continuam números.
+    """
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, str):
+        return seguro_para_excel(v)
     return "" if v is None else v
 
 

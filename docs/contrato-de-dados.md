@@ -64,6 +64,7 @@ uv run adlens exportar        # cria data/export/
   ```
 - **Mudar o contrato é uma decisão combinada.** Coluna nova no fim da tabela não quebra quem já consome. Renomear ou remover coluna quebra: só com aviso a quem usa as tabelas.
 - **Booleanos** vêm como `true`/`false` e **vazio** significa sem valor.
+- **Texto que parece fórmula ganha um apóstrofo.** Se um texto (ex.: `ad_name`) começa com `=`, `+`, `-`, `@`, tab ou quebra de linha, ele sai com `'` na frente (`'=HYPERLINK(...)`), para o Excel não executar como fórmula. Números não mudam: um `lift` de `-0.05` continua `-0.05`.
 
 ## Carregar no BigQuery
 
