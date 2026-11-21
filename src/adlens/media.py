@@ -17,6 +17,7 @@ from pathlib import Path
 
 import duckdb
 
+from adlens.filters import Filter
 from adlens.performance import PerformanceRow, PlantedEffects, simulate_performance
 from adlens.synthetic import CreativeSpec
 
@@ -113,24 +114,50 @@ def save_media(rows: list[MediaRow], path: Path) -> Path:
     return path
 
 
-def performance_from_media(path: Path) -> list[PerformanceRow]:
+# Como ler a mídia diária: ad_id sempre texto e date sempre data
+_LER_MIDIA = "read_csv(?, header = true, types = {'ad_id': 'VARCHAR', 'date': 'DATE'})"
+
+
+def performance_from_media(
+    path: Path, filtro: Filter | None = None
+) -> list[PerformanceRow]:
     """Soma a mídia diária por anúncio, com SQL, direto do arquivo.
 
+    Com `filtro`, soma só as linhas do recorte (país, plataforma, período).
     Num BigQuery de verdade seria a mesma consulta, trocando o
     read_csv(...) pelo nome da tabela.
     """
-    sql = """
+    where, valores = (filtro or Filter()).where()
+    sql = f"""
         SELECT
             ad_id,
             SUM(impressions)::BIGINT AS impressions,
             SUM(clicks)::BIGINT AS clicks,
             ROUND(SUM(investment), 2) AS investment
-        FROM read_csv(?, header = true, types = {'ad_id': 'VARCHAR'})
+        FROM {_LER_MIDIA}
+        WHERE {where}
         GROUP BY ad_id
         ORDER BY ad_id
     """
-    resultado = duckdb.execute(sql, [str(path)]).fetchall()
+    resultado = duckdb.execute(sql, [str(path), *valores]).fetchall()
     return [
         PerformanceRow(ad, int(imp), int(cli), float(inv))
         for ad, imp, cli, inv in resultado
     ]
+
+
+def available_values(path: Path) -> dict[str, list[str]]:
+    """O que dá para filtrar: países, plataformas e o primeiro e o último dia."""
+    con = duckdb.connect()
+    con.execute(f"CREATE TABLE midia AS SELECT * FROM {_LER_MIDIA}", [str(path)])
+
+    def distintos(coluna: str) -> list[str]:
+        sql = f"SELECT DISTINCT {coluna} FROM midia ORDER BY 1"
+        return [str(v) for (v,) in con.execute(sql).fetchall()]
+
+    primeiro, ultimo = con.execute("SELECT MIN(date), MAX(date) FROM midia").fetchone()
+    return {
+        "paises": distintos("country"),
+        "plataformas": distintos("platform"),
+        "periodo": [primeiro.isoformat(), ultimo.isoformat()],
+    }

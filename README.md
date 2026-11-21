@@ -44,8 +44,21 @@ uv run adlens relatorio                  # gera data/relatorio.html
 uv run adlens exportar                   # tabelas do contrato em data/export/
 uv run adlens painel                     # página com filtros (rascunho do Hub)
 uv run adlens hub                        # site com abas em site/ (o GitHub Pages publica)
-
 ```
+
+Para analisar só um recorte, use os filtros no `analisar` e no `relatorio`
+(também valem nas ferramentas do MCP como `pais`, `plataforma`,
+`data_inicio` e `data_fim`):
+
+```bash
+uv run adlens analisar --pais BR,MX --plataforma meta --de 2026-10-01 --ate 2026-10-15
+uv run adlens relatorio --pais BR       # o relatório mostra o recorte no topo
+```
+
+O filtro corta a mídia diária antes de somar por anúncio: um criativo entra
+só com os números do recorte. Recortes com menos de 30 criativos são
+recusados, e um valor que não existe nos dados (ex.: `BRA`) gera um erro
+que lista os disponíveis.
 
 ## Contrato de dados e página do Hub
 
@@ -78,6 +91,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Simulação realista com as armadilhas do dado de verdade
 - [x] Regressão: efeito isolado de cada etiqueta, controlando país, peso igual por criativo e correção para muitos testes
 - [x] Regressão ligada à linha de comando, ao relatório, ao contrato, ao MCP e ao hub
+- [x] Filtros por país, plataforma e período (linha de comando, relatório e MCP)
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora

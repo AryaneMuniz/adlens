@@ -132,3 +132,30 @@ def test_cache_nao_refaz_a_analise_sem_os_dados_mudarem(projeto, monkeypatch):
     cli(["gerar", "--n", "200", "--seed", "7", "--pasta", "data"])
     efeito_das_caracteristicas(sorteios=50)
     assert len(chamadas) == 2
+
+
+def test_resumo_lista_o_que_da_para_filtrar(projeto):
+    resumo = resumo_dos_dados()
+    assert resumo["recorte"] == "todos os dados"
+    assert "BR" in resumo["disponivel"]["paises"]
+    assert "meta" in resumo["disponivel"]["plataformas"]
+
+
+def test_resumo_com_filtro_conta_so_o_recorte(projeto):
+    total = resumo_dos_dados()["criativos"]
+    so_br = resumo_dos_dados(pais="BR,MX")
+    assert 0 < so_br["criativos"] < total
+    assert so_br["recorte"] == "país BR, MX"
+
+
+def test_efeito_com_filtro_traz_o_recorte(projeto):
+    efeitos = efeito_das_caracteristicas(plataforma="meta,tiktok,google")
+    assert efeitos
+    assert {e["recorte"] for e in efeitos} == {"plataforma meta, tiktok, google"}
+
+
+def test_filtro_errado_explica_para_o_agente(projeto):
+    with pytest.raises(ToolError, match="AAAA-MM-DD"):
+        efeito_das_caracteristicas(data_inicio="ontem")
+    with pytest.raises(ToolError, match="Disponíveis"):
+        resumo_dos_dados(pais="XX")

@@ -374,9 +374,19 @@ def build_report(
     rows: list[PerformanceRow],
     images: list[str] | None = None,
     theme: Theme = THEMES[TEMA_PADRAO],
+    recorte: str = "",
 ) -> str:
-    """Monta o HTML completo do relatório."""
+    """Monta o HTML completo do relatório.
+
+    `recorte` é o filtro usado (ex.: "país BR · plataforma meta"); quando
+    vem preenchido, aparece no topo para ninguém achar que é o geral.
+    """
     images = images or []
+    chip_recorte = (
+        f'<span class="chip">recorte: {escape(recorte)}</span>'
+        if recorte and recorte != "todos os dados"
+        else ""
+    )
     impressoes = sum(r.impressions for r in rows)
     cliques = sum(r.clicks for r in rows)
     investimento = sum(r.spend for r in rows)
@@ -433,7 +443,7 @@ def build_report(
 <p class="entra" style="--i:2">Quanto cada característica muda o CTR, e o quanto dá
 pra confiar em cada resposta.</p>
 <div class="chips entra" style="--i:3"><span class="chip">intervalo de 95%</span>
-{_chips_de_tipo(images)}</div>
+{chip_recorte}{_chips_de_tipo(images)}</div>
 </div>
 </header>
 <main>
