@@ -73,7 +73,10 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Contrato de dados pronto para o BigQuery
 - [x] Página com filtros (rascunho para um hub de dashboards)
 - [x] Hub com abas publicado automaticamente no GitHub Pages (CD)
-- [ ] Etiquetador com IA de visão
+- [x] Etiquetador com IA de visão (ClaudeTagger; precisão real a medir quando houver chave)
+- [x] Simulação realista com as armadilhas do dado de verdade
+- [x] Regressão: efeito isolado de cada etiqueta, controlando país, peso igual por criativo e correção para muitos testes
+- [ ] Regressão ligada ao relatório, ao MCP e ao hub
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora
