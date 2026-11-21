@@ -3,6 +3,7 @@
 import csv
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -94,3 +95,10 @@ def test_comando_exportar(pasta, tmp_path):
     )
     assert codigo == 0
     assert (tmp_path / "adlens_efeitos.csv").exists()
+
+
+def test_documentacao_cita_todas_as_colunas():
+    doc = Path(__file__).parents[1] / "docs" / "contrato-de-dados.md"
+    texto = doc.read_text(encoding="utf-8")
+    for coluna, _, _ in CRIATIVOS_SCHEMA + EFEITOS_SCHEMA:
+        assert f"`{coluna}`" in texto, f"coluna sem documentação: {coluna}"
