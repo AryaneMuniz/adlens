@@ -35,7 +35,16 @@ uv run adlens gerar --n 1000 --imagens   # cria criativos, performance e imagens
 uv run adlens etiquetar                  # etiqueta as imagens
 uv run adlens analisar                   # mostra o lift de cada etiqueta
 uv run adlens relatorio                  # gera data/relatorio.html
+
+uv run adlens exportar                   # tabelas do contrato em data/export/
+uv run adlens painel                     # página com filtros (rascunho do Hub)
 ```
+
+## Contrato de dados e página do Hub
+
+O adlens entrega duas tabelas com formato combinado: `adlens_criativos` (uma linha por anúncio) e `adlens_efeitos` (uma linha por etiqueta, com o intervalo de 95%). Os tipos seguem o padrão do BigQuery e cada tabela vem com o schema em JSON. Detalhes em [docs/contrato-de-dados.md](docs/contrato-de-dados.md).
+
+O comando `adlens painel` monta uma página com filtros de país e plataforma lendo **só** essas duas tabelas. Ela é o rascunho de uma página num hub de dashboards.
 
 ## Achado: etiquetador que erra esconde o efeito
 
@@ -47,15 +56,16 @@ uv run adlens relatorio                  # gera data/relatorio.html
 
 Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito real. Antes de usar um etiquetador em dado real, é preciso medir a precisão dele.
 
-## Roteiro
-
 - [x] Estrutura do projeto e fluxo de trabalho (branch, PR, testes)
 - [x] Gerador de criativos e performance sintéticos
 - [x] Análise de efeito por etiqueta com intervalo de confiança
 - [x] Linha de comando e relatório HTML
 - [x] Etiquetadores trocáveis (pixel e fake)
 - [x] CI no GitHub Actions
-- [ ] Servidor MCP (agentes de IA consultando o adlens)
+- [x] Servidor MCP (agentes de IA consultando o adlens)
+- [x] Mídia diária no formato de plataforma de anúncios
+- [x] Contrato de dados pronto para o BigQuery
+- [x] Página com filtros (rascunho para um hub de dashboards)
 - [ ] Etiquetador com IA de visão
 - [ ] Dados no BigQuery e execução na nuvem
 

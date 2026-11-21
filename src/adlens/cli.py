@@ -6,6 +6,7 @@ Exemplos:
     adlens analisar
     adlens relatorio
     adlens exportar
+    adlens painel
 """
 
 import argparse
@@ -15,6 +16,7 @@ from pathlib import Path
 from adlens.confidence import bootstrap_lifts
 from adlens.export import export_all
 from adlens.media import save_media, simulate_media
+from adlens.panel import build_panel, read_contract
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
 from adlens.report import THEMES, build_report, save_report
@@ -124,6 +126,20 @@ def cmd_exportar(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_painel(args: argparse.Namespace) -> int:
+    """Gera a página do Hub (rascunho) lendo só as tabelas do contrato."""
+    pasta: Path = args.pasta
+    try:
+        criativos, efeitos = read_contract(pasta)
+    except (FileNotFoundError, ValueError) as erro:
+        print(f"ERRO: {erro}")
+        return 1
+    saida: Path = args.saida or pasta / "painel.html"
+    html = build_panel(criativos, efeitos, THEMES[args.tema])
+    print(f"OK: painel salvo em {save_report(html, saida).resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -163,6 +179,12 @@ def build_parser() -> argparse.ArgumentParser:
     exportar.add_argument("--saida", type=Path, help="padrão: PASTA/export")
     exportar.add_argument("--boot", type=int, default=300)
     exportar.set_defaults(func=cmd_exportar)
+
+    painel = sub.add_parser("painel", help="gera a página do Hub (rascunho)")
+    painel.add_argument("--pasta", type=Path, default=PASTA_PADRAO / "export")
+    painel.add_argument("--saida", type=Path, help="padrão: PASTA/painel.html")
+    painel.add_argument("--tema", choices=sorted(THEMES), default="neutro")
+    painel.set_defaults(func=cmd_painel)
 
     return parser
 
