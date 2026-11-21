@@ -110,15 +110,24 @@ def _ctr_by(
 
 
 def analyze(con: duckdb.DuckDBPyConnection) -> list[TagLift]:
-    """Calcula o lift de todas as etiquetas."""
+    """Calcula o lift de todas as etiquetas.
+
+    Se faltar um dos lados da comparação (num recorte pequeno, nenhum
+    criativo azul, por exemplo), aquela etiqueta fica de fora em vez de
+    quebrar a análise.
+    """
     results: list[TagLift] = []
     for column, name in BINARY_TAGS.items():
         groups = _ctr_by(con, column)
+        if "true" not in groups or "false" not in groups:
+            continue
         ctr_yes, n_yes = groups["true"]
         ctr_no, _ = groups["false"]
         results.append(TagLift(name, "sim", "não", ctr_yes, ctr_no, n_yes))
     for column, (name, reference) in CATEGORICAL_TAGS.items():
         groups = _ctr_by(con, column)
+        if reference not in groups:
+            continue
         ctr_ref, _ = groups[reference]
         for value, (ctr, n) in sorted(groups.items()):
             if value != reference:

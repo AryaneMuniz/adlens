@@ -13,7 +13,8 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from adlens.media import performance_from_media
+from adlens.filters import MIN_CREATIVES, Filter
+from adlens.media import available_values, performance_from_media
 from adlens.performance import PerformanceRow
 from adlens.synthetic import CreativeSpec
 
@@ -120,14 +121,40 @@ def load_countries(pasta: Path) -> dict[str, str]:
         return {row["ad_id"]: row["country"] for row in csv.DictReader(f)}
 
 
-def load_dataset(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
+def check_filter(filtro: Filter, midia: Path) -> None:
+    """Para com erro claro se o filtro pede algo que não existe nos dados.
+
+    Sem isso, "pais=BRA" (em vez de BR) devolveria zero linhas e a pessoa
+    (ou o agente) não saberia por quê. O erro já lista o que existe.
+    """
+    existe = available_values(midia)
+    for pedidos, chave, nome in (
+        (filtro.countries, "paises", "País"),
+        (filtro.platforms, "plataformas", "Plataforma"),
+    ):
+        faltam = [v for v in pedidos if v not in existe[chave]]
+        if faltam:
+            raise ValueError(
+                f"{nome} sem dados: {', '.join(faltam)}. "
+                f"Disponíveis: {', '.join(existe[chave])}"
+            )
+
+
+def load_dataset(
+    pasta: Path, filtro: Filter | None = None
+) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
     """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
 
     Etiquetas: etiquetas.csv quando existe (o que o etiquetador viu); senão,
     criativos.csv (o gabarito). Performance: midia_diaria.csv somada por
     anúncio quando existe; senão, performance.csv. Devolve também o nome do
     arquivo de etiquetas usado. Para com erro claro se o dado for inválido.
+
+    Com `filtro`, só entram os criativos que rodaram no recorte, com os
+    números do recorte. Precisa da mídia diária (o performance.csv já vem
+    somado e não tem país, plataforma nem data).
     """
+    filtro = filtro or Filter()
     etiquetas, gabarito = pasta / "etiquetas.csv", pasta / "criativos.csv"
     fichas = etiquetas if etiquetas.exists() else gabarito
     midia, perf = pasta / "midia_diaria.csv", pasta / "performance.csv"
@@ -135,10 +162,31 @@ def load_dataset(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow],
         raise FileNotFoundError(
             f"Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
         )
+    if filtro.active and not midia.exists():
+        raise ValueError(
+            "Os filtros precisam da mídia diária (midia_diaria.csv), que tem "
+            "país, plataforma e data. Rode: adlens gerar"
+        )
     specs = load_specs(fichas)
-    linhas = performance_from_media(midia) if midia.exists() else load_performance(perf)
+    if not midia.exists():
+        linhas = load_performance(perf)
+    else:
+        if filtro.active:
+            check_filter(filtro, midia)
+        linhas = performance_from_media(midia, filtro)
     validate_performance(linhas)
-    faltando = sorted({s.creative_id for s in specs} - {r.creative_id for r in linhas})
+    ids = {r.creative_id for r in linhas}
+    if filtro.active:
+        # No recorte, quem não rodou simplesmente fica de fora
+        specs = [s for s in specs if s.creative_id in ids]
+        if len(specs) < MIN_CREATIVES:
+            raise ValueError(
+                f"Só {len(specs)} criativos no recorte ({filtro.describe()}); "
+                f"o mínimo para uma análise confiável é {MIN_CREATIVES}. "
+                "Afrouxe os filtros."
+            )
+        return specs, linhas, fichas.name
+    faltando = sorted({s.creative_id for s in specs} - ids)
     if faltando:
         raise ValueError(f"Criativos sem performance: {', '.join(faltando[:5])}")
     return specs, linhas, fichas.name

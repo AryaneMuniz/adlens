@@ -6,6 +6,7 @@ Exemplos:
     adlens etiquetar --etiquetador claude --amostra 20
     adlens analisar
     adlens analisar --metodo simples --boot 300
+    adlens analisar --pais BR,MX --plataforma meta --de 2026-10-01 --ate 2026-10-15
     adlens relatorio
     adlens exportar
     adlens painel
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from adlens.confidence import Interval
 from adlens.export import export_all
+from adlens.filters import Filter, parse_filter
 from adlens.hub import publish_hub
 from adlens.media import save_media, simulate_media
 from adlens.panel import build_panel, read_contract
@@ -39,15 +41,28 @@ PASTA_PADRAO = Path("data")
 EXTENSOES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov"}
 
 
-def _carregar(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow]] | None:
-    """Lê os dados da pasta; avisa e devolve None se faltar algum arquivo."""
+def _carregar(
+    pasta: Path, filtro: Filter | None = None
+) -> tuple[list[CreativeSpec], list[PerformanceRow]] | None:
+    """Lê os dados da pasta; avisa e devolve None se faltar arquivo ou der erro."""
     try:
-        specs, rows, fonte = load_dataset(pasta)
-    except FileNotFoundError as erro:
+        specs, rows, fonte = load_dataset(pasta, filtro)
+    except (FileNotFoundError, ValueError) as erro:
         print(f"ERRO: {erro}")
         return None
     print(f"Usando as etiquetas de: {fonte}")
+    if filtro is not None and filtro.active:
+        print(f"Recorte: {filtro.describe()} ({len(specs)} criativos)")
     return specs, rows
+
+
+def _filtro_de(args: argparse.Namespace) -> Filter | None:
+    """Monta o filtro com o que veio em --pais/--plataforma/--de/--ate."""
+    try:
+        return parse_filter(args.pais, args.plataforma, args.de, args.ate)
+    except ValueError as erro:
+        print(f"ERRO: {erro}")
+        return None
 
 
 def _efeitos(
@@ -146,7 +161,8 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
 
 def cmd_analisar(args: argparse.Namespace) -> int:
     """Mostra o lift de cada etiqueta, com o intervalo de 95%."""
-    dados = _carregar(args.pasta)
+    filtro = _filtro_de(args)
+    dados = _carregar(args.pasta, filtro) if filtro is not None else None
     if dados is None:
         return 1
     resultados = _efeitos(args, *dados)
@@ -164,7 +180,8 @@ def cmd_analisar(args: argparse.Namespace) -> int:
 def cmd_relatorio(args: argparse.Namespace) -> int:
     """Gera o relatório HTML."""
     pasta: Path = args.pasta
-    dados = _carregar(pasta)
+    filtro = _filtro_de(args)
+    dados = _carregar(pasta, filtro) if filtro is not None else None
     if dados is None:
         return 1
     specs, rows = dados
@@ -178,7 +195,9 @@ def cmd_relatorio(args: argparse.Namespace) -> int:
         p for p in (pasta / "imagens").glob("*") if p.suffix.lower() in EXTENSOES
     )[:12]
     imagens = [os.path.relpath(p, saida.parent).replace("\\", "/") for p in pecas]
-    html = build_report(intervalos, specs, rows, imagens, THEMES[args.tema])
+    html = build_report(
+        intervalos, specs, rows, imagens, THEMES[args.tema], filtro.describe()
+    )
     print(f"OK: relatório salvo em {save_report(html, saida).resolve()}")
     return 0
 
@@ -238,6 +257,14 @@ def _metodo(comando: argparse.ArgumentParser, boot: int) -> None:
     )
 
 
+def _filtros(comando: argparse.ArgumentParser) -> None:
+    """As opções de recorte, iguais no analisar e no relatório."""
+    comando.add_argument("--pais", help="um ou vários, separados por vírgula: BR,MX")
+    comando.add_argument("--plataforma", help="uma ou várias: meta,tiktok")
+    comando.add_argument("--de", help="primeiro dia (AAAA-MM-DD), inclusive")
+    comando.add_argument("--ate", help="último dia (AAAA-MM-DD), inclusive")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -268,12 +295,14 @@ def build_parser() -> argparse.ArgumentParser:
     analisar = sub.add_parser("analisar", help="calcula o lift de cada etiqueta")
     analisar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     _metodo(analisar, boot=300)
+    _filtros(analisar)
     analisar.set_defaults(func=cmd_analisar)
 
     relatorio = sub.add_parser("relatorio", help="gera o relatório HTML")
     relatorio.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     relatorio.add_argument("--saida", type=Path, help="padrão: PASTA/relatorio.html")
     _metodo(relatorio, boot=300)
+    _filtros(relatorio)
     relatorio.add_argument("--tema", choices=sorted(THEMES), default=TEMA_PADRAO)
     relatorio.set_defaults(func=cmd_relatorio)
 
