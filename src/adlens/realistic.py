@@ -12,7 +12,8 @@ análise simples erra:
 - giant: nenhuma etiqueta faz nada, mas uma peça gigante, por acaso, foi bem.
 - noisy: nenhuma etiqueta faz nada, mas cada criativo tem seu próprio "jeito".
 
-A correção vem depois (regressão, Issue #35). Aqui só mostramos o problema.
+A correção está em `regression.py` (Issue #35). Rode este arquivo para ver
+o antes e depois: uv run python -m adlens.realistic
 """
 
 import random
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 
 from adlens.confidence import bootstrap_lifts
 from adlens.performance import PerformanceRow, sample_clicks
+from adlens.regression import fit_effects
 from adlens.synthetic import CreativeSpec, generate_specs
 
 BASE_CTR = 0.012
@@ -140,31 +142,31 @@ def false_alarms(world: World, n_boot: int = 100) -> int:
 
 
 if __name__ == "__main__":
+
+    def regressao(world: World, tag: str) -> float:
+        """O lift que a regressão (#35) mede para a mesma etiqueta."""
+        efeitos = fit_effects(world.specs, world.rows, world.country)
+        return next(e.lift for e in efeitos if e.tag == tag and e.value == "sim")
+
     print(
-        f"{'armadilha':<12}{'etiqueta':<10}{'real':>8}{'medido':>9}  olhando por dentro"
+        f"{'armadilha':<12}{'etiqueta':<10}{'real':>8}{'simples':>10}{'regressão':>11}"
     )
-    c = confounded()
-    dentro = simple_lift(c, "rosto", keep=lambda s, _: s.has_cta)
-    print(
-        f"{'confounded':<12}{'rosto':<10}{0:>+8.0%}{simple_lift(c, 'rosto'):>+9.1%}"
-        f"  só com CTA: {dentro:+.1%}"
+    for nome, mundo, tag in [
+        ("confounded", confounded(), "rosto"),
+        ("simpson", simpson(), "rosto"),
+        ("giant", giant(), "produto"),
+    ]:
+        print(
+            f"{nome:<12}{tag:<10}{mundo.truth[tag]:>+8.0%}"
+            f"{simple_lift(mundo, tag):>+10.1%}{regressao(mundo, tag):>+11.1%}"
+        )
+    mundos = [noisy(seed=k) for k in range(20)]
+    simples = sum(false_alarms(m) > 0 for m in mundos)
+    com_regressao = sum(
+        any(e.significant for e in fit_effects(m.specs, m.rows, m.country))
+        for m in mundos
     )
-    s = simpson()
-    br = simple_lift(s, "rosto", keep=lambda _, p: p == "BR")
-    mx = simple_lift(s, "rosto", keep=lambda _, p: p == "MX")
     print(
-        f"{'simpson':<12}{'rosto':<10}{0.15:>+8.0%}{simple_lift(s, 'rosto'):>+9.1%}"
-        f"  BR: {br:+.1%} | MX: {mx:+.1%}"
-    )
-    g = giant()
-    sem = simple_lift(g, "produto", keep=lambda s, _: s.creative_id != "CR0001")
-    print(
-        f"{'giant':<12}{'produto':<10}{0:>+8.0%}{simple_lift(g, 'produto'):>+9.1%}"
-        f"  sem a peça gigante: {sem:+.1%}"
-    )
-    alarmes = [false_alarms(noisy(seed=k)) for k in range(20)]
-    com_alarme = sum(a > 0 for a in alarmes)
-    print(
-        f"{'noisy':<12}{'todas':<10}{0:>+8.0%}{'':>9}"
-        f"  {com_alarme} de 20 análises acusaram efeito que não existe"
+        f"noisy: análises (de 20) que acusaram efeito que não existe: "
+        f"simples {simples}, regressão {com_regressao}"
     )

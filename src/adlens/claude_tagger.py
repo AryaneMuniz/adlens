@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import anthropic
 from PIL import Image
 
 from adlens.synthetic import CreativeSpec
@@ -87,6 +86,11 @@ class ClaudeTagger:
         strong_model: str = STRONG_MODEL,
     ):
         if client is None:
+            # Importa aqui dentro, e não no topo: a biblioteca anthropic é
+            # pesada (dezenas de segundos para carregar em algumas máquinas)
+            # e quem usa o cliente de mentira, como os testes, não precisa dela
+            import anthropic
+
             # Lê a chave da variável ANTHROPIC_API_KEY. Espera no máximo 60 s
             # por resposta e tenta de novo só 2 vezes, para não travar
             client = anthropic.Anthropic(timeout=60, max_retries=2)

@@ -15,9 +15,6 @@ import argparse
 import os
 from pathlib import Path
 
-from anthropic import AnthropicError
-
-from adlens.claude_tagger import ClaudeTagger, TaggingError
 from adlens.confidence import bootstrap_lifts
 from adlens.export import export_all
 from adlens.hub import publish_hub
@@ -82,6 +79,8 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
         )
         return 1
     tagger: Tagger
+    claude = None  # o ClaudeTagger, quando for ele (para mostrar o uso no fim)
+    erros_da_ia: tuple[type[Exception], ...] = ()  # vazio = não captura nada
     if args.etiquetador == "pixel":
         tagger = PixelTagger()
     elif args.etiquetador == "claude":
@@ -91,7 +90,15 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
                 "variável ANTHROPIC_API_KEY (nunca escreva a chave no código)."
             )
             return 1
-        tagger = ClaudeTagger(cache_path=pasta / "cache_claude.jsonl")
+        # Importa só aqui: a biblioteca anthropic leva dezenas de segundos para
+        # carregar e só o etiquetador claude precisa dela
+        from anthropic import AnthropicError
+
+        from adlens.claude_tagger import ClaudeTagger, TaggingError
+
+        claude = ClaudeTagger(cache_path=pasta / "cache_claude.jsonl")
+        tagger = claude
+        erros_da_ia = (TaggingError, AnthropicError)
     else:
         tagger = FakeTagger(gabarito, error_rate=args.erro, seed=args.seed)
 
@@ -100,7 +107,7 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
     alvo = gabarito[: args.amostra] if args.amostra > 0 else gabarito
     try:
         etiquetas = tag_all(tagger, [s.creative_id for s in alvo], imagens)
-    except (TaggingError, AnthropicError) as erro:
+    except erros_da_ia as erro:
         print(f"ERRO: a IA não conseguiu etiquetar: {erro}")
         return 1
 
@@ -112,9 +119,9 @@ def cmd_etiquetar(args: argparse.Namespace) -> int:
     print("Precisão de cada etiqueta (comparada com o gabarito):")
     for campo, precisao in accuracy_by_tag(etiquetas, alvo).items():
         print(f"  {campo:<16}{precisao:>6.0%}")
-    if isinstance(tagger, ClaudeTagger):
-        print(f"Vindos do cache (sem custo): {tagger.cache_hits}")
-        for modelo, uso in tagger.usage.items():
+    if claude is not None:
+        print(f"Vindos do cache (sem custo): {claude.cache_hits}")
+        for modelo, uso in claude.usage.items():
             print(
                 f"  {modelo}: {uso.calls} chamadas, {uso.input_tokens} tokens de "
                 f"entrada, {uso.output_tokens} de saída"
