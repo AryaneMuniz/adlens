@@ -7,7 +7,8 @@ isso ele mora num lugar só (aqui) e tem testes que travam qualquer mudança.
 
 Tabelas:
 - adlens_criativos: uma linha por anúncio, com etiquetas e métricas
-- adlens_efeitos: uma linha por etiqueta, com o lift e o intervalo de 95%
+- adlens_efeitos: uma linha por etiqueta, com o lift, o intervalo de 95% e
+  o método que calculou (regressão ou simples)
 
 Além dos CSVs, gera o schema de cada tabela no formato JSON que o
 BigQuery aceita para criar a tabela.
@@ -21,8 +22,8 @@ from pathlib import Path
 import duckdb
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
-from adlens.confidence import bootstrap_lifts
-from adlens.storage import load_dataset
+from adlens.regression import compute_effects
+from adlens.storage import load_countries, load_dataset
 
 # (coluna, tipo no BigQuery, descrição)
 CRIATIVOS_SCHEMA: list[tuple[str, str, str]] = [
@@ -54,8 +55,9 @@ EFEITOS_SCHEMA: list[tuple[str, str, str]] = [
     ("lift", "FLOAT64", "Quanto o CTR muda em relação à referência"),
     ("ci_low", "FLOAT64", "Limite inferior do intervalo de 95%"),
     ("ci_high", "FLOAT64", "Limite superior do intervalo de 95%"),
-    ("significant", "BOOL", "O intervalo não cruza o zero"),
+    ("significant", "BOOL", "Dá para afirmar que o efeito existe"),
     ("creatives", "INT64", "Quantos criativos têm esse valor"),
+    ("method", "STRING", "Como o efeito foi calculado: regressao ou simples"),
 ]
 
 
@@ -75,7 +77,10 @@ def _dimensions(midia_csv: Path) -> dict[str, dict]:
 
 
 def build_exports(
-    pasta: Path, boot: int = 300, run_at: datetime | None = None
+    pasta: Path,
+    boot: int = 300,
+    run_at: datetime | None = None,
+    method: str = "regressao",
 ) -> tuple[list[dict], list[dict]]:
     """Monta as linhas das duas tabelas do contrato."""
     run_at = run_at or datetime.now(UTC)
@@ -115,7 +120,7 @@ def build_exports(
     nomes |= {nome: col for col, (nome, _) in CATEGORICAL_TAGS.items()}
     referencias = {nome: ref for nome, ref in CATEGORICAL_TAGS.values()}
     efeitos = []
-    for r in bootstrap_lifts(specs, rows, n_boot=boot):
+    for r in compute_effects(specs, rows, load_countries(pasta), method, boot):
         coluna = nomes[r.tag]
         if r.tag in referencias:
             n = sum(getattr(s, coluna) == r.value for s in specs)
@@ -133,6 +138,7 @@ def build_exports(
                 "ci_high": round(r.high, 6),
                 "significant": r.significant,
                 "creatives": n,
+                "method": method,
             }
         )
     return criativos, efeitos
@@ -189,9 +195,11 @@ def write_schema(schema: list[tuple[str, str, str]], path: Path) -> Path:
     return path
 
 
-def export_all(pasta: Path, saida: Path, boot: int = 300) -> list[Path]:
+def export_all(
+    pasta: Path, saida: Path, boot: int = 300, method: str = "regressao"
+) -> list[Path]:
     """Gera as duas tabelas do contrato e os schemas, prontos para o BigQuery."""
-    criativos, efeitos = build_exports(pasta, boot)
+    criativos, efeitos = build_exports(pasta, boot, method=method)
     return [
         write_table(criativos, CRIATIVOS_SCHEMA, saida / "adlens_criativos.csv"),
         write_table(efeitos, EFEITOS_SCHEMA, saida / "adlens_efeitos.csv"),

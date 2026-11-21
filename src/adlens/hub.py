@@ -18,9 +18,10 @@ from html import escape
 from pathlib import Path
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
-from adlens.confidence import LiftInterval, bootstrap_lifts
+from adlens.confidence import Interval
 from adlens.export import _dimensions
 from adlens.performance import PerformanceRow
+from adlens.regression import compute_effects
 from adlens.report import (
     _ESTILO,
     TEMA_PADRAO,
@@ -31,7 +32,7 @@ from adlens.report import (
     _vars,
     lift_chart,
 )
-from adlens.storage import load_dataset
+from adlens.storage import load_countries, load_dataset
 from adlens.synthetic import CreativeSpec
 
 # (id da aba, nome no menu, selo)
@@ -108,7 +109,7 @@ def _kpis(seg: Segmento) -> str:
     )
 
 
-def _tabela(seg: Segmento, intervals: list[LiftInterval]) -> str:
+def _tabela(seg: Segmento, intervals: list[Interval]) -> str:
     linhas = []
     for r in sorted(intervals, key=lambda r: r.lift, reverse=True):
         n = group_size(seg.specs, r.tag, r.value)
@@ -381,7 +382,7 @@ _ICONE_CADEADO = (
 
 
 def build_hub(
-    resultados: list[tuple[Segmento, list[LiftInterval]]],
+    resultados: list[tuple[Segmento, list[Interval]]],
     criativos_json: str,
     tem_imagens: bool,
     gerado_em: datetime,
@@ -576,13 +577,16 @@ Actions refaz o hub e publica sozinho no GitHub Pages.</p></div>
 """
 
 
-def publish_hub(pasta: Path, saida: Path, boot: int = 200) -> Path:
+def publish_hub(
+    pasta: Path, saida: Path, boot: int = 200, method: str = "regressao"
+) -> Path:
     """Calcula tudo, grava o index.html e copia as imagens dos criativos."""
     specs, rows, _ = load_dataset(pasta)
     midia = pasta / "midia_diaria.csv"
     dims = _dimensions(midia) if midia.exists() else {}
+    paises = load_countries(pasta)
     resultados = [
-        (seg, bootstrap_lifts(seg.specs, seg.rows, n_boot=boot))
+        (seg, compute_effects(seg.specs, seg.rows, paises, method, boot))
         for seg in segments(specs, rows, dims)
     ]
     imagens = pasta / "imagens"

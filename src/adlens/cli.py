@@ -5,6 +5,7 @@ Exemplos:
     adlens etiquetar --etiquetador pixel
     adlens etiquetar --etiquetador claude --amostra 20
     adlens analisar
+    adlens analisar --metodo simples --boot 300
     adlens relatorio
     adlens exportar
     adlens painel
@@ -15,15 +16,16 @@ import argparse
 import os
 from pathlib import Path
 
-from adlens.confidence import bootstrap_lifts
+from adlens.confidence import Interval
 from adlens.export import export_all
 from adlens.hub import publish_hub
 from adlens.media import save_media, simulate_media
 from adlens.panel import build_panel, read_contract
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
+from adlens.regression import METHODS, compute_effects
 from adlens.render import render_all
 from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
-from adlens.storage import load_dataset, load_specs, save_specs
+from adlens.storage import load_countries, load_dataset, load_specs, save_specs
 from adlens.synthetic import CreativeSpec, generate_specs
 from adlens.tagging import (
     FakeTagger,
@@ -46,6 +48,19 @@ def _carregar(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow]] | 
         return None
     print(f"Usando as etiquetas de: {fonte}")
     return specs, rows
+
+
+def _efeitos(
+    args: argparse.Namespace, specs: list[CreativeSpec], rows: list[PerformanceRow]
+) -> list[Interval] | None:
+    """Calcula os efeitos pelo método pedido; avisa e devolve None se não der."""
+    try:
+        return compute_effects(
+            specs, rows, load_countries(args.pasta), args.metodo, args.boot
+        )
+    except ValueError as erro:  # ex.: poucos criativos, etiquetas sempre juntas
+        print(f"ERRO: {erro}")
+        return None
 
 
 def cmd_gerar(args: argparse.Namespace) -> int:
@@ -134,7 +149,10 @@ def cmd_analisar(args: argparse.Namespace) -> int:
     dados = _carregar(args.pasta)
     if dados is None:
         return 1
-    resultados = bootstrap_lifts(*dados, n_boot=args.boot)
+    resultados = _efeitos(args, *dados)
+    if resultados is None:
+        return 1
+    print(f"Método: {args.metodo}")
     print(f"{'etiqueta':<10}{'valor':<12}{'lift':>8}   intervalo de 95%     real?")
     for r in resultados:
         faixa = f"[{r.low:+.1%} a {r.high:+.1%}]"
@@ -150,7 +168,9 @@ def cmd_relatorio(args: argparse.Namespace) -> int:
     if dados is None:
         return 1
     specs, rows = dados
-    intervalos = bootstrap_lifts(specs, rows, n_boot=args.boot)
+    intervalos = _efeitos(args, specs, rows)
+    if intervalos is None:
+        return 1
     saida: Path = args.saida or pasta / "relatorio.html"
     # Até 12 criativos de exemplo (estáticos, GIFs ou vídeos), com o caminho
     # relativo ao relatório
@@ -167,8 +187,10 @@ def cmd_exportar(args: argparse.Namespace) -> int:
     """Exporta as tabelas do contrato de dados (prontas para o BigQuery)."""
     pasta: Path = args.pasta
     try:
-        arquivos = export_all(pasta, args.saida or pasta / "export", boot=args.boot)
-    except FileNotFoundError as erro:
+        arquivos = export_all(
+            pasta, args.saida or pasta / "export", method=args.metodo, boot=args.boot
+        )
+    except (FileNotFoundError, ValueError) as erro:
         print(f"ERRO: {erro}")
         return 1
     for arquivo in arquivos:
@@ -193,12 +215,27 @@ def cmd_painel(args: argparse.Namespace) -> int:
 def cmd_hub(args: argparse.Namespace) -> int:
     """Gera o hub (site com abas) pronto para o GitHub Pages."""
     try:
-        destino = publish_hub(args.pasta, args.saida, boot=args.boot)
+        destino = publish_hub(
+            args.pasta, args.saida, method=args.metodo, boot=args.boot
+        )
     except (FileNotFoundError, ValueError) as erro:
         print(f"ERRO: {erro}")
         return 1
     print(f"OK: hub salvo em {destino.resolve()}")
     return 0
+
+
+def _metodo(comando: argparse.ArgumentParser, boot: int) -> None:
+    """As opções de método, iguais em todos os comandos que calculam efeitos."""
+    comando.add_argument(
+        "--metodo",
+        choices=METHODS,
+        default=METHODS[0],
+        help="regressao (padrão, isola cada etiqueta) ou simples (comparação de grupos)",
+    )
+    comando.add_argument(
+        "--boot", type=int, default=boot, help="só no simples: sorteios do bootstrap"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -230,20 +267,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     analisar = sub.add_parser("analisar", help="calcula o lift de cada etiqueta")
     analisar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
-    analisar.add_argument("--boot", type=int, default=300, help="sorteios do bootstrap")
+    _metodo(analisar, boot=300)
     analisar.set_defaults(func=cmd_analisar)
 
     relatorio = sub.add_parser("relatorio", help="gera o relatório HTML")
     relatorio.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     relatorio.add_argument("--saida", type=Path, help="padrão: PASTA/relatorio.html")
-    relatorio.add_argument("--boot", type=int, default=300)
+    _metodo(relatorio, boot=300)
     relatorio.add_argument("--tema", choices=sorted(THEMES), default=TEMA_PADRAO)
     relatorio.set_defaults(func=cmd_relatorio)
 
     exportar = sub.add_parser("exportar", help="exporta as tabelas do contrato")
     exportar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     exportar.add_argument("--saida", type=Path, help="padrão: PASTA/export")
-    exportar.add_argument("--boot", type=int, default=300)
+    _metodo(exportar, boot=300)
     exportar.set_defaults(func=cmd_exportar)
 
     painel = sub.add_parser("painel", help="gera a página do Hub (rascunho)")
@@ -255,7 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     hub = sub.add_parser("hub", help="gera o hub (site com abas)")
     hub.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     hub.add_argument("--saida", type=Path, default=Path("site"))
-    hub.add_argument("--boot", type=int, default=200)
+    _metodo(hub, boot=200)
     hub.set_defaults(func=cmd_hub)
 
     return parser

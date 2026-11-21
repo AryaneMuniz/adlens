@@ -26,7 +26,7 @@ CONTRATO_CRIATIVOS = [
 ]  # fmt: skip
 CONTRATO_EFEITOS = [
     "run_id", "run_at", "tag", "value", "reference", "lift",
-    "ci_low", "ci_high", "significant", "creatives",
+    "ci_low", "ci_high", "significant", "creatives", "method",
 ]  # fmt: skip
 
 
@@ -128,3 +128,10 @@ def test_csv_desarma_texto_mas_nao_mexe_em_numero(tmp_path):
     with caminho.open(encoding="utf-8", newline="") as f:
         linha = next(csv.DictReader(f))
     assert linha == {"ad_name": "'=1+1", "lift": "-0.05"}
+
+
+def test_efeitos_dizem_qual_metodo_calculou(pasta):
+    _, efeitos = build_exports(pasta)
+    assert {e["method"] for e in efeitos} == {"regressao"}
+    _, efeitos = build_exports(pasta, boot=20, method="simples")
+    assert {e["method"] for e in efeitos} == {"simples"}

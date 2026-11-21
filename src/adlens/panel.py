@@ -11,11 +11,11 @@ precisar de servidor.
 
 import csv
 import json
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
 from adlens.analysis import BINARY_TAGS
-from adlens.confidence import LiftInterval
 from adlens.export import CRIATIVOS_SCHEMA, EFEITOS_SCHEMA
 from adlens.report import THEMES, Theme, _css, lift_chart
 
@@ -53,15 +53,32 @@ def latest_run(rows: list[dict]) -> list[dict]:
     return [r for r in rows if r["run_id"] == ultimo]
 
 
-def to_intervals(efeitos: list[dict]) -> list[LiftInterval]:
+@dataclass(frozen=True)
+class ContractEffect:
+    """Uma linha da tabela de efeitos, já com os tipos certos.
+
+    O "efeito real?" vem pronto da coluna `significant`: a página não refaz a
+    conta (na regressão, ele depende da correção para muitas etiquetas).
+    """
+
+    tag: str
+    value: str
+    lift: float
+    low: float
+    high: float
+    significant: bool
+
+
+def to_intervals(efeitos: list[dict]) -> list[ContractEffect]:
     """Transforma as linhas da tabela de efeitos no formato do gráfico."""
     return [
-        LiftInterval(
+        ContractEffect(
             e["tag"],
             e["value"],
             float(e["lift"]),
             float(e["ci_low"]),
             float(e["ci_high"]),
+            e["significant"] == "true",
         )
         for e in efeitos
     ]

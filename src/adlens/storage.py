@@ -107,6 +107,19 @@ def load_performance(path: Path) -> list[PerformanceRow]:
     return rows
 
 
+def load_countries(pasta: Path) -> dict[str, str]:
+    """O país de cada criativo, lido da mídia diária (vazio se não houver).
+
+    A regressão usa o país como controle: compara rosto com sem-rosto dentro
+    do mesmo país. Sem mídia diária, todo mundo fica no mesmo "país".
+    """
+    midia = pasta / "midia_diaria.csv"
+    if not midia.exists():
+        return {}
+    with midia.open(encoding="utf-8") as f:
+        return {row["ad_id"]: row["country"] for row in csv.DictReader(f)}
+
+
 def load_dataset(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow], str]:
     """Lê as etiquetas (ou, se não houver, o gabarito) e a performance.
 

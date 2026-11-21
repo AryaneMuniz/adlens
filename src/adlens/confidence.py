@@ -9,10 +9,33 @@ criativos (com reposição) e recalculando o lift em cada uma.
 import random
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Protocol
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
 from adlens.performance import PerformanceRow, simulate_performance
 from adlens.synthetic import CreativeSpec, generate_specs
+
+
+class Interval(Protocol):
+    """O que toda tela do adlens precisa de um resultado: o "molde" comum.
+
+    O bootstrap (LiftInterval), a regressão (Effect) e a linha lida do
+    contrato servem todos, porque têm esses campos. Quem desenha o gráfico
+    não precisa saber qual conta gerou o número (o "L" e o "D" do SOLID).
+    """
+
+    @property
+    def tag(self) -> str: ...
+    @property
+    def value(self) -> str: ...
+    @property
+    def lift(self) -> float: ...
+    @property
+    def low(self) -> float: ...
+    @property
+    def high(self) -> float: ...
+    @property
+    def significant(self) -> bool: ...
 
 
 @dataclass(frozen=True)

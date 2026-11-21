@@ -51,8 +51,9 @@ uv run adlens exportar        # cria data/export/
 | `lift` | FLOAT64 | Quanto o CTR muda em relação à referência (0.15 = +15%) |
 | `ci_low` | FLOAT64 | Limite inferior do intervalo de 95% |
 | `ci_high` | FLOAT64 | Limite superior do intervalo de 95% |
-| `significant` | BOOL | O intervalo não cruza o zero (dá para afirmar o efeito) |
+| `significant` | BOOL | Dá para afirmar que o efeito existe. Na regressão: p-valor corrigido por Benjamini-Hochberg abaixo de 5% (mais exigente que "o intervalo não cruza o zero"). No simples: o intervalo não cruza o zero |
 | `creatives` | INT64 | Quantos criativos têm esse valor |
+| `method` | STRING | Como o efeito foi calculado: `regressao` (padrão, efeito isolado das outras etiquetas e do país) ou `simples` (comparação de grupos) |
 
 ## Regras
 

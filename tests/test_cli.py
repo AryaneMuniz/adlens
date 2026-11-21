@@ -46,3 +46,20 @@ def test_relatorio_sem_dados_retorna_erro(tmp_path):
 def test_gerar_cria_a_midia_diaria(tmp_path):
     main(["gerar", "--n", "10", "--pasta", str(tmp_path)])
     assert (tmp_path / "midia_diaria.csv").exists()
+
+
+def test_analisar_usa_a_regressao_por_padrao(tmp_path, capsys):
+    main(["gerar", "--n", "300", "--pasta", str(tmp_path)])
+    capsys.readouterr()
+    assert main(["analisar", "--pasta", str(tmp_path)]) == 0
+    assert "Método: regressao" in capsys.readouterr().out
+    argv = ["analisar", "--pasta", str(tmp_path), "--metodo", "simples"]
+    assert main([*argv, "--boot", "20"]) == 0
+    assert "Método: simples" in capsys.readouterr().out
+
+
+def test_regressao_sem_criativos_suficientes_avisa(tmp_path, capsys):
+    main(["gerar", "--n", "6", "--pasta", str(tmp_path)])
+    capsys.readouterr()
+    assert main(["analisar", "--pasta", str(tmp_path)]) == 1
+    assert "Poucos criativos" in capsys.readouterr().out
