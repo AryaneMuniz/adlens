@@ -113,6 +113,7 @@ def _css(t: Theme) -> str:
 body{{font-family:{t.font};margin:0;background:{t.background};color:{t.ink}}}
 .faixa{{height:6px;background:{t.stripe}}}
 main{{max-width:920px;margin:28px auto;padding:0 16px}}
+h1,h2{{font-family:{t.display or t.font}}}
 h1{{margin:0;color:{t.accent}}}.sub{{color:{t.muted};margin:4px 0 24px}}
 .kpis{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px}}
 .kpi{{background:#fff;border:1px solid {t.line};border-radius:12px;
@@ -241,10 +242,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);
 main{max-width:1040px;margin:-40px auto 0;padding:0 max(16px,env(safe-area-inset-right,0px))
   64px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:40px;
   position:relative;z-index:2}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:20px 22px;
   box-shadow:0 12px 32px -18px rgba(20,22,58,.35)}
-.kpi b{display:block;font-family:var(--display);font-size:30px;letter-spacing:-.5px;
+.kpi b{display:block;font-family:var(--display);font-size:clamp(22px,2.4vw,30px);letter-spacing:-.5px;
+  white-space:nowrap;
   font-variant-numeric:tabular-nums}
 .kpi span{color:var(--muted);font-size:14px;font-weight:600}
 h2{font-family:var(--display);font-size:clamp(22px,3.4vw,30px);letter-spacing:-.5px;margin:0}
@@ -261,8 +263,13 @@ h2{font-family:var(--display);font-size:clamp(22px,3.4vw,30px);letter-spacing:-.
 .destaque.neg .valor{color:var(--neg)}
 .destaque .nome{font-weight:700;font-size:17px}
 .destaque .ic{color:var(--muted);font-size:14px}
-.cartao{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:20px}
+.cartao{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:20px;
+  overflow-x:auto}
 .grafico{display:block}
+@media (max-width:640px){
+  .grafico{min-width:560px}
+  .cartao:has(.grafico)::before{content:"Deslize para o lado para ver o gráfico inteiro →";display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px}
+}
 .legenda{display:flex;flex-wrap:wrap;gap:16px;font-size:14px;color:var(--muted)}
 .legenda span{display:inline-flex;align-items:center;gap:6px}
 .legenda i{width:14px;height:10px;border-radius:3px;display:inline-block}

@@ -20,6 +20,15 @@ from datetime import date
 MIN_CREATIVES = 30
 
 
+class FilterError(ValueError):
+    """O filtro pedido não serve: data errada, valor inexistente, recorte pequeno.
+
+    É um ValueError (quem já tratava ValueError continua funcionando), mas
+    com nome próprio para as telas dizerem "filtro inválido" em vez de
+    "os dados têm um problema": o dado está certo, o pedido é que não serve.
+    """
+
+
 @dataclass(frozen=True)
 class Filter:
     """Um recorte dos dados. Campo vazio = sem filtro naquele campo."""
@@ -80,7 +89,7 @@ def _data(texto: str | None, campo: str) -> date | None:
     try:
         return date.fromisoformat(texto.strip())
     except ValueError:
-        raise ValueError(
+        raise FilterError(
             f"{campo} inválida: {texto!r}. Use o formato AAAA-MM-DD, ex.: 2026-10-01"
         ) from None
 
@@ -104,7 +113,7 @@ def parse_filter(
         end=_data(end, "Data final"),
     )
     if filtro.start and filtro.end and filtro.start > filtro.end:
-        raise ValueError(
+        raise FilterError(
             f"A data inicial ({filtro.start}) é depois da final ({filtro.end})."
         )
     return filtro

@@ -22,7 +22,7 @@ from adlens.explore import (
     tag_distribution,
     top_creatives,
 )
-from adlens.filters import Filter, parse_filter
+from adlens.filters import Filter, FilterError, parse_filter
 from adlens.media import available_values
 from adlens.metrics import METRICS, Metric, get_metric
 from adlens.performance import PerformanceRow
@@ -79,7 +79,7 @@ def _filtro(pais: str, plataforma: str, data_inicio: str, data_fim: str) -> Filt
     try:
         return parse_filter(pais, plataforma, data_inicio, data_fim)
     except ValueError as erro:
-        raise ToolError(str(erro)) from erro
+        raise ToolError(f"Filtro inválido: {erro}") from erro
 
 
 def _carregar(
@@ -93,6 +93,8 @@ def _carregar(
         return load_dataset(base, filtro)
     except FileNotFoundError as erro:
         raise ToolError(f"{erro}. Rode antes: adlens gerar") from erro
+    except FilterError as erro:  # o pedido não serve; o dado está certo
+        raise ToolError(f"Filtro inválido: {erro}") from erro
     except ValueError as erro:
         raise ToolError(f"Os dados têm um problema: {erro}") from erro
 
@@ -291,7 +293,8 @@ def top_criativos(
 ) -> list[dict]:
     """Os melhores (ou, com piores=true, os piores) criativos, com as etiquetas.
 
-    `ordenar_por`: ctr (padrão), impressoes, cliques ou investimento.
+    `ordenar_por`: ctr (padrão), impressoes, cliques, investimento, cpm ou
+    cpc. No cpm e no cpc, "melhores" são os mais BARATOS.
     `quantidade`: de 1 a 50 (padrão 10). `minimo_impressoes` (padrão 1000)
     tira quem quase não rodou: com pouca entrega, CTR alto é sorte. Útil
     para mostrar exemplos concretos de um efeito, mas um ranking NÃO prova
@@ -327,6 +330,8 @@ def top_criativos(
             "cliques": c.clicks,
             "ctr": round(c.ctr, 5),
             "investimento": round(c.spend, 2),
+            "cpm": round(c.cpm, 2),
+            "cpc": round(c.cpc, 2),
             "recorte": filtro.describe(),
         }
         for i, c in enumerate(ranking, start=1)

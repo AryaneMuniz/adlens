@@ -119,3 +119,17 @@ def test_etiqueta_que_so_existe_num_recorte_fica_de_fora():
     ]
     b = [LiftInterval("rosto", "sim", 0.15, 0.10, 0.20)]
     assert [(c.tag, c.value) for c in compare_effects(a, b)] == [("rosto", "sim")]
+
+
+def test_ranking_por_cpc_poe_o_mais_barato_primeiro():
+    specs = [_spec("CARO"), _spec("BARATO"), _spec("SEM_CLIQUE")]
+    rows = [
+        PerformanceRow("CARO", 10_000, 100, 200.0),  # CPC R$ 2,00
+        PerformanceRow("BARATO", 10_000, 200, 100.0),  # CPC R$ 0,50
+        PerformanceRow("SEM_CLIQUE", 10_000, 0, 150.0),  # sem clique: nunca é o melhor
+    ]
+    ranking = top_creatives(specs, rows, by="cpc")
+    assert [c.creative_id for c in ranking] == ["BARATO", "CARO", "SEM_CLIQUE"]
+    assert ranking[0].cpc == 0.5
+    piores = top_creatives(specs, rows, by="cpc", worst=True)
+    assert piores[0].creative_id == "SEM_CLIQUE"

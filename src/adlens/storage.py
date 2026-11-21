@@ -13,7 +13,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from adlens.filters import MIN_CREATIVES, Filter
+from adlens.filters import MIN_CREATIVES, Filter, FilterError
 from adlens.media import available_values, performance_from_media
 from adlens.performance import PerformanceRow
 from adlens.synthetic import CreativeSpec
@@ -134,7 +134,7 @@ def check_filter(filtro: Filter, midia: Path) -> None:
     ):
         faltam = [v for v in pedidos if v not in existe[chave]]
         if faltam:
-            raise ValueError(
+            raise FilterError(
                 f"{nome} sem dados: {', '.join(faltam)}. "
                 f"Disponíveis: {', '.join(existe[chave])}"
             )
@@ -163,7 +163,7 @@ def load_dataset(
             f"Não achei os dados em {pasta.resolve()}. Rode antes: adlens gerar"
         )
     if filtro.active and not midia.exists():
-        raise ValueError(
+        raise FilterError(
             "Os filtros precisam da mídia diária (midia_diaria.csv), que tem "
             "país, plataforma e data. Rode: adlens gerar"
         )
@@ -180,7 +180,7 @@ def load_dataset(
         # No recorte, quem não rodou simplesmente fica de fora
         specs = [s for s in specs if s.creative_id in ids]
         if len(specs) < MIN_CREATIVES:
-            raise ValueError(
+            raise FilterError(
                 f"Só {len(specs)} criativos no recorte ({filtro.describe()}); "
                 f"o mínimo para uma análise confiável é {MIN_CREATIVES}. "
                 "Afrouxe os filtros."
