@@ -7,6 +7,7 @@ Exemplos:
     adlens relatorio
     adlens exportar
     adlens painel
+    adlens hub
 """
 
 import argparse
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from adlens.confidence import bootstrap_lifts
 from adlens.export import export_all
+from adlens.hub import publish_hub
 from adlens.media import save_media, simulate_media
 from adlens.panel import build_panel, read_contract
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
@@ -144,6 +146,17 @@ def cmd_painel(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hub(args: argparse.Namespace) -> int:
+    """Gera o hub (site com abas) pronto para o GitHub Pages."""
+    try:
+        destino = publish_hub(args.pasta, args.saida, boot=args.boot)
+    except (FileNotFoundError, ValueError) as erro:
+        print(f"ERRO: {erro}")
+        return 1
+    print(f"OK: hub salvo em {destino.resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -189,6 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     painel.add_argument("--saida", type=Path, help="padrão: PASTA/painel.html")
     painel.add_argument("--tema", choices=sorted(THEMES), default="neutro")
     painel.set_defaults(func=cmd_painel)
+
+    hub = sub.add_parser("hub", help="gera o hub (site com abas)")
+    hub.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
+    hub.add_argument("--saida", type=Path, default=Path("site"))
+    hub.add_argument("--boot", type=int, default=200)
+    hub.set_defaults(func=cmd_hub)
 
     return parser
 
