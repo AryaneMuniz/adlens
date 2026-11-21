@@ -56,8 +56,14 @@ def test_pasta_fora_do_projeto_e_bloqueada(projeto):
 
 def test_efeito_diz_com_o_que_compara(projeto):
     efeitos = {
-        (e["etiqueta"], e["valor"]): e for e in efeito_das_caracteristicas(sorteios=20)
+        (e["etiqueta"], e["valor"]): e for e in efeito_das_caracteristicas(sorteios=50)
     }
     assert efeitos[("rosto", "sim")]["referencia"] == "não"
     assert efeitos[("cor", "vermelho")]["referencia"] == "azul"
     assert efeitos[("formato", "vertical")]["referencia"] == "quadrado"
+
+
+@pytest.mark.parametrize("sorteios", [0, 10, 5000])
+def test_sorteios_fora_do_limite_da_erro(projeto, sorteios):
+    with pytest.raises(ValueError, match="entre 50 e 2000"):
+        efeito_das_caracteristicas(sorteios=sorteios)
