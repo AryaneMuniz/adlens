@@ -2,7 +2,12 @@
 
 [![CI](https://github.com/AryaneMuniz/adlens/actions/workflows/ci.yml/badge.svg)](https://github.com/AryaneMuniz/adlens/actions/workflows/ci.yml)
 
+
+🌐 **Hub:** https://aryanemuniz.github.io/adlens/
+
+
 **Inteligência de criativos:** um etiquetador "olha" cada criativo de anúncio (rosto, produto, cor, formato, CTA) e o adlens cruza essas etiquetas com a performance para mostrar **quais características puxam o CTR**, com intervalo de confiança.
+
 
 > 🚧 Piloto de aprendizado em engenharia de dados e IA.
 
@@ -35,9 +40,10 @@ uv run adlens gerar --n 1000 --imagens   # cria criativos, performance e imagens
 uv run adlens etiquetar                  # etiqueta as imagens
 uv run adlens analisar                   # mostra o lift de cada etiqueta
 uv run adlens relatorio                  # gera data/relatorio.html
-
 uv run adlens exportar                   # tabelas do contrato em data/export/
 uv run adlens painel                     # página com filtros (rascunho do Hub)
+uv run adlens hub                        # site com abas em site/ (o GitHub Pages publica)
+
 ```
 
 ## Contrato de dados e página do Hub
@@ -66,6 +72,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Mídia diária no formato de plataforma de anúncios
 - [x] Contrato de dados pronto para o BigQuery
 - [x] Página com filtros (rascunho para um hub de dashboards)
+- [x] Hub com abas publicado automaticamente no GitHub Pages (CD)
 - [ ] Etiquetador com IA de visão
 - [ ] Dados no BigQuery e execução na nuvem
 
