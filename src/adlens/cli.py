@@ -6,6 +6,7 @@ Exemplos:
     adlens etiquetar --etiquetador claude --amostra 20
     adlens analisar
     adlens analisar --metodo simples --boot 300
+    adlens analisar --metrica cpc
     adlens analisar --pais BR,MX --plataforma meta --de 2026-10-01 --ate 2026-10-15
     adlens relatorio
     adlens exportar
@@ -22,6 +23,7 @@ from adlens.export import export_all
 from adlens.filters import Filter, parse_filter
 from adlens.hub import publish_hub
 from adlens.media import save_media, simulate_media
+from adlens.metrics import METRICS, get_metric, is_good
 from adlens.panel import build_panel, read_contract
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.regression import METHODS, compute_effects
@@ -71,7 +73,12 @@ def _efeitos(
     """Calcula os efeitos pelo método pedido; avisa e devolve None se não der."""
     try:
         return compute_effects(
-            specs, rows, load_countries(args.pasta), args.metodo, args.boot
+            specs,
+            rows,
+            load_countries(args.pasta),
+            args.metodo,
+            args.boot,
+            get_metric(args.metrica),
         )
     except ValueError as erro:  # ex.: poucos criativos, etiquetas sempre juntas
         print(f"ERRO: {erro}")
@@ -168,12 +175,22 @@ def cmd_analisar(args: argparse.Namespace) -> int:
     resultados = _efeitos(args, *dados)
     if resultados is None:
         return 1
+    metrica = get_metric(args.metrica)
     print(f"Método: {args.metodo}")
-    print(f"{'etiqueta':<10}{'valor':<12}{'lift':>8}   intervalo de 95%     real?")
+    print(f"Métrica: {metrica.label} ({metrica.direction()})")
+    print(
+        f"{'etiqueta':<10}{'valor':<12}{'lift':>8}   intervalo de 95%     real?  efeito"
+    )
     for r in resultados:
         faixa = f"[{r.low:+.1%} a {r.high:+.1%}]"
         real = "sim" if r.significant else "não"
-        print(f"{r.tag:<10}{r.value:<12}{r.lift:>+8.1%}   {faixa:<20} {real}")
+        # "melhora"/"piora" já considera o sentido: no CPC, cair melhora
+        efeito = "-"
+        if r.significant:
+            efeito = "melhora" if is_good(r.lift, metrica) else "piora"
+        print(
+            f"{r.tag:<10}{r.value:<12}{r.lift:>+8.1%}   {faixa:<20} {real:<6} {efeito}"
+        )
     return 0
 
 
@@ -196,7 +213,13 @@ def cmd_relatorio(args: argparse.Namespace) -> int:
     )[:12]
     imagens = [os.path.relpath(p, saida.parent).replace("\\", "/") for p in pecas]
     html = build_report(
-        intervalos, specs, rows, imagens, THEMES[args.tema], filtro.describe()
+        intervalos,
+        specs,
+        rows,
+        imagens,
+        THEMES[args.tema],
+        filtro.describe(),
+        get_metric(args.metrica),
     )
     print(f"OK: relatório salvo em {save_report(html, saida).resolve()}")
     return 0
@@ -265,6 +288,16 @@ def _filtros(comando: argparse.ArgumentParser) -> None:
     comando.add_argument("--ate", help="último dia (AAAA-MM-DD), inclusive")
 
 
+def _metrica(comando: argparse.ArgumentParser) -> None:
+    """A opção de métrica, igual no analisar e no relatório."""
+    comando.add_argument(
+        "--metrica",
+        choices=sorted(METRICS),
+        default="ctr",
+        help="ctr (padrão, maior é melhor), cpm ou cpc (menor é melhor)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Monta o "cardápio" de comandos e opções."""
     parser = argparse.ArgumentParser(
@@ -296,6 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     analisar.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     _metodo(analisar, boot=300)
     _filtros(analisar)
+    _metrica(analisar)
     analisar.set_defaults(func=cmd_analisar)
 
     relatorio = sub.add_parser("relatorio", help="gera o relatório HTML")
@@ -303,6 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     relatorio.add_argument("--saida", type=Path, help="padrão: PASTA/relatorio.html")
     _metodo(relatorio, boot=300)
     _filtros(relatorio)
+    _metrica(relatorio)
     relatorio.add_argument("--tema", choices=sorted(THEMES), default=TEMA_PADRAO)
     relatorio.set_defaults(func=cmd_relatorio)
 

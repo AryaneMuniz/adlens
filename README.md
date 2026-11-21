@@ -60,6 +60,20 @@ só com os números do recorte. Recortes com menos de 30 criativos são
 recusados, e um valor que não existe nos dados (ex.: `BRA`) gera um erro
 que lista os disponíveis.
 
+Além do CTR, dá para analisar o **CPM** (custo por mil impressões) e o
+**CPC** (custo por clique) com `--metrica` (no MCP, `metrica`):
+
+```bash
+uv run adlens analisar --metrica cpc     # coluna "efeito" diz se melhora ou piora
+uv run adlens relatorio --metrica cpm
+```
+
+Atenção ao sentido: no CTR, subir é bom; no CPM e no CPC, **cair** é bom
+(ficou mais barato). As telas já levam isso em conta nas cores e nos
+destaques. Na demo, o formato muda o CPM (vertical −10%, horizontal +5%)
+e nenhuma outra etiqueta mexe nele; o CPC combina os dois efeitos.
+Métricas de vídeo (view rate etc.) entram quando houver essas colunas.
+
 ## Servidor MCP (agentes de IA)
 
 Com `uv run adlens-mcp`, um agente de IA (Claude, Copilot...) consulta o
@@ -107,6 +121,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Regressão ligada à linha de comando, ao relatório, ao contrato, ao MCP e ao hub
 - [x] Filtros por país, plataforma e período (linha de comando, relatório e MCP)
 - [x] MCP: distribuição das etiquetas, ranking de criativos e comparação de recortes
+- [x] Métricas além do CTR: CPM e CPC (linha de comando, relatório e MCP)
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora

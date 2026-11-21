@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
+from adlens.metrics import METRICS, Metric
 from adlens.performance import PerformanceRow, simulate_performance
 from adlens.synthetic import CreativeSpec, generate_specs
 
@@ -66,14 +67,20 @@ def _groups(spec: CreativeSpec) -> list[tuple[str, str]]:
     return groups
 
 
-def _lifts(sample: list[tuple[CreativeSpec, PerformanceRow]]) -> dict:
-    """Calcula o lift de todas as etiquetas numa amostra de criativos."""
-    clicks: dict = defaultdict(int)
-    impressions: dict = defaultdict(int)
+def _lifts(
+    sample: list[tuple[CreativeSpec, PerformanceRow]], metric: Metric = METRICS["ctr"]
+) -> dict:
+    """Calcula o lift de todas as etiquetas numa amostra de criativos.
+
+    Soma o que vai em cima e o que vai embaixo da divisão da métrica por
+    grupo (no CTR: cliques e impressões) e divide no fim.
+    """
+    clicks: dict = defaultdict(float)  # o de cima da divisão
+    impressions: dict = defaultdict(float)  # o de baixo
     for spec, row in sample:
         for group in _groups(spec):
-            clicks[group] += row.clicks
-            impressions[group] += row.impressions
+            clicks[group] += getattr(row, metric.numerator)
+            impressions[group] += getattr(row, metric.denominator)
 
     def ctr(group):
         return clicks[group] / impressions[group] if impressions[group] else None
@@ -96,17 +103,18 @@ def bootstrap_lifts(
     rows: list[PerformanceRow],
     n_boot: int = 300,
     seed: int = 0,
+    metric: Metric = METRICS["ctr"],
 ) -> list[LiftInterval]:
     """Lift de cada etiqueta com intervalo de confiança de 95% (bootstrap)."""
     by_id = {r.creative_id: r for r in rows}
     data = [(s, by_id[s.creative_id]) for s in specs]
-    point = _lifts(data)
+    point = _lifts(data, metric)
 
     rng = random.Random(seed)
     samples: dict = defaultdict(list)
     for _ in range(n_boot):
         resample = rng.choices(data, k=len(data))  # sorteio com reposição
-        for key, lift in _lifts(resample).items():
+        for key, lift in _lifts(resample, metric).items():
             samples[key].append(lift)
 
     results = []
