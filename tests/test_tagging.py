@@ -3,8 +3,8 @@
 import pytest
 
 from adlens.render import render_all
-from adlens.synthetic import generate_specs
-from adlens.tagging import FakeTagger, PixelTagger, tag_all
+from adlens.synthetic import CreativeSpec, generate_specs
+from adlens.tagging import FakeTagger, PixelTagger, accuracy_by_tag, tag_all
 
 
 @pytest.fixture(scope="module")
@@ -43,3 +43,18 @@ def test_pixel_tagger_acerta_tudo_nas_imagens_sinteticas(imagens):
     specs, pasta = imagens
     etiquetas = tag_all(PixelTagger(), [s.creative_id for s in specs], pasta)
     assert etiquetas == specs
+
+
+def test_precisao_por_etiqueta():
+    gabarito = [
+        CreativeSpec("A", True, True, True, "azul", "quadrado"),
+        CreativeSpec("B", False, True, False, "preto", "vertical"),
+    ]
+    etiquetas = [
+        CreativeSpec("A", False, True, True, "azul", "quadrado"),  # errou o rosto
+        CreativeSpec("B", False, True, False, "verde", "vertical"),  # errou a cor
+    ]
+    precisao = accuracy_by_tag(etiquetas, gabarito)
+    assert precisao["has_face"] == 0.5
+    assert precisao["dominant_color"] == 0.5
+    assert precisao["has_product"] == 1.0
