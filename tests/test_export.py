@@ -13,6 +13,8 @@ from adlens.export import (
     EFEITOS_SCHEMA,
     build_exports,
     export_all,
+    seguro_para_excel,
+    write_table,
 )
 
 # O contrato combinado com quem consome as tabelas (Dataviz / BigQuery).
@@ -102,3 +104,27 @@ def test_documentacao_cita_todas_as_colunas():
     texto = doc.read_text(encoding="utf-8")
     for coluna, _, _ in CRIATIVOS_SCHEMA + EFEITOS_SCHEMA:
         assert f"`{coluna}`" in texto, f"coluna sem documentação: {coluna}"
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ('=HYPERLINK("x","clique")', '\'=HYPERLINK("x","clique")'),
+        ("+55 11 9999", "'+55 11 9999"),
+        ("-promo", "'-promo"),
+        ("@sum(A1)", "'@sum(A1)"),
+        ("Natal 2026", "Natal 2026"),  # texto normal não muda
+        ("", ""),
+    ],
+)
+def test_texto_que_parece_formula_e_desarmado(texto, esperado):
+    assert seguro_para_excel(texto) == esperado
+
+
+def test_csv_desarma_texto_mas_nao_mexe_em_numero(tmp_path):
+    schema = [("ad_name", "STRING", ""), ("lift", "FLOAT64", "")]
+    linhas = [{"ad_name": "=1+1", "lift": -0.05}]
+    caminho = write_table(linhas, schema, tmp_path / "t.csv")
+    with caminho.open(encoding="utf-8", newline="") as f:
+        linha = next(csv.DictReader(f))
+    assert linha == {"ad_name": "'=1+1", "lift": "-0.05"}
