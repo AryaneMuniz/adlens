@@ -240,3 +240,16 @@ def test_comparar_periodos_avisa_sobre_criativos_em_comum(projeto):
 def test_comparar_recortes_iguais_e_erro(projeto):
     with pytest.raises(ToolError, match="são iguais"):
         comparar(a_pais="BR", b_pais="br")
+
+
+def test_top_criativos_por_cpc_vem_do_mais_barato(projeto):
+    ranking = top_criativos(ordenar_por="cpc", quantidade=5)
+    cpcs = [r["cpc"] for r in ranking]
+    assert cpcs == sorted(cpcs)
+    assert ranking[0]["cpm"] > 0
+
+
+def test_erro_de_filtro_nao_culpa_os_dados(projeto):
+    with pytest.raises(ToolError) as erro:
+        resumo_dos_dados(pais="BRA")
+    assert str(erro.value).startswith("Filtro inválido")

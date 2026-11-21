@@ -20,6 +20,7 @@ from pathlib import Path
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
 from adlens.confidence import Interval
 from adlens.export import _dimensions
+from adlens.metrics import METRICS, Metric
 from adlens.performance import PerformanceRow
 from adlens.regression import compute_effects
 from adlens.report import (
@@ -145,6 +146,25 @@ def _por_segmento(blocos: list[tuple[Segmento, str]]) -> str:
     )
 
 
+def _por_segmento_e_metrica(blocos: list[tuple[Segmento, str, str]]) -> str:
+    """Um bloco por segmento e métrica; só "todos" + CTR começa visível."""
+    return "".join(
+        f'<div data-seg="{seg.chave}" data-met="{met}"'
+        f"{'' if (seg.chave, met) == ('todos', 'ctr') else ' hidden'}>{html}</div>"
+        for seg, met, html in blocos
+    )
+
+
+def _legenda(t: Theme, metric: Metric) -> str:
+    """A legenda do gráfico: a cor diz se melhora ou piora (no CPC, cair melhora)."""
+    return (
+        '<div class="legenda">'
+        f'<span><i style="background:{t.positive}"></i>melhora o {metric.label}</span>'
+        f'<span><i style="background:{t.negative}"></i>piora o {metric.label}</span>'
+        f'<span><i style="background:{t.neutral}"></i>não dá pra afirmar</span></div>'
+    )
+
+
 def creatives_json(
     specs: list[CreativeSpec], rows: list[PerformanceRow], dims: dict[str, dict]
 ) -> str:
@@ -165,6 +185,10 @@ def creatives_json(
                 "formato": s.format,
                 "impressoes": p.impressions,
                 "ctr": round(p.ctr, 6),
+                "cpm": round(p.spend / p.impressions * 1000, 2)
+                if p.impressions
+                else None,
+                "cpc": round(p.spend / p.clicks, 2) if p.clicks else None,
             }
         )
     # "</" dentro de um <script> fecharia a tag antes da hora
@@ -195,6 +219,7 @@ body{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
 .topo h1{font-family:var(--display);font-size:22px;margin:0;letter-spacing:-.3px}
 .selo-demo{font-size:12px;font-weight:800;letter-spacing:.4px;padding:5px 10px;border-radius:999px;
   background:color-mix(in srgb,var(--glow) 24%,transparent);color:#6B4400}
+.filtro + .filtro{margin-left:0}
 .filtro{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;
   color:var(--muted)}
 select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);
@@ -259,6 +284,9 @@ _JS_HUB = """
   var DADOS = JSON.parse(document.getElementById('dados').textContent);
   var IMAGENS = document.body.dataset.imagens === '1';
   var sel = document.getElementById('segmento');
+  var met = document.getElementById('metrica');
+  function reais(v){ return v == null ? '-' : 'R$ ' + v.toLocaleString('pt-BR',
+    {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
   var calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function contar(){
@@ -321,12 +349,14 @@ _JS_HUB = """
       {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '% CTR';
     var meta = document.createElement('span'); meta.className = 'meta';
     meta.textContent = c.id + ' · ' + c.plataforma + ' · ' + c.pais;
+    var custo = document.createElement('span'); custo.className = 'meta';
+    custo.textContent = 'CPC ' + reais(c.cpc) + ' · CPM ' + reais(c.cpm);
     var tags = document.createElement('div'); tags.className = 'tags';
     [c.rosto && 'rosto', c.produto && 'produto', c.cta && 'cta', c.cor, c.formato]
       .filter(Boolean).forEach(function(t){
         var s = document.createElement('span'); s.textContent = t; tags.appendChild(s);
       });
-    info.append(ctr, meta, tags);
+    info.append(ctr, meta, custo, tags);
     el.append(img, info);
     return el;
   }
@@ -340,7 +370,13 @@ _JS_HUB = """
         && (!filtros.rosto || c.rosto) && (!filtros.produto || c.produto)
         && (!filtros.cta || c.cta) && (!cor || c.cor === cor)
         && (!formato || c.formato === formato);
-    }).sort(function(a, b){ return ordem === 'asc' ? a.ctr - b.ctr : b.ctr - a.ctr; });
+    }).sort(function(a, b){
+      if (ordem === 'cpc' || ordem === 'cpm') {  // custo: o mais barato primeiro
+        var x = a[ordem] == null ? Infinity : a[ordem], y = b[ordem] == null ? Infinity : b[ordem];
+        return x - y;
+      }
+      return ordem === 'asc' ? a.ctr - b.ctr : b.ctr - a.ctr;
+    });
     grade.replaceChildren();
     lista.slice(0, limite).forEach(function(c){ grade.appendChild(cartao(c)); });
     document.getElementById('total').textContent =
@@ -361,12 +397,16 @@ _JS_HUB = """
   });
   mais.addEventListener('click', function(){ limite += 24; desenhar(); });
 
-  sel.addEventListener('change', function(){
+  function aplicarFiltros(){
     document.querySelectorAll('[data-seg]').forEach(function(el){
-      el.hidden = el.dataset.seg !== sel.value;
+      el.hidden = el.dataset.seg !== sel.value
+        || (el.dataset.met !== undefined && el.dataset.met !== met.value);
     });
-    limite = 24; desenhar(); contar();
+  }
+  sel.addEventListener('change', function(){
+    aplicarFiltros(); limite = 24; desenhar(); contar();
   });
+  met.addEventListener('change', aplicarFiltros);
 
   window.addEventListener('hashchange', mostrarAba);
   mostrarAba();
@@ -387,9 +427,16 @@ def build_hub(
     tem_imagens: bool,
     gerado_em: datetime,
     theme: Theme = THEMES[TEMA_PADRAO],
+    por_metrica: dict[str, list[tuple[Segmento, list[Interval]]]] | None = None,
 ) -> str:
-    """Monta o HTML do hub (uma página só, com todas as abas)."""
+    """Monta o HTML do hub (uma página só, com todas as abas).
+
+    `resultados` são os efeitos no CTR. `por_metrica` traz, quando houver,
+    os efeitos em cada métrica ({"ctr": ..., "cpm": ..., "cpc": ...}): o hub
+    ganha o seletor de métrica.
+    """
     t = theme
+    por_metrica = por_metrica or {"ctr": resultados}
     nav = "".join(
         f'<a href="#{aba}"><span>{nome}</span>'
         f"{f'<small>{selo}</small>' if selo else ''}</a>"
@@ -402,10 +449,22 @@ def build_hub(
     kpis = _por_segmento(
         [(s, f'<div class="kpis">{_kpis(s)}</div>') for s, _ in resultados]
     )
-    destaques = _por_segmento([(s, _destaques(i)) for s, i in resultados])
+    destaques = _por_segmento_e_metrica(
+        [
+            (s, met, _destaques(i, METRICS[met]))
+            for met, lista in por_metrica.items()
+            for s, i in lista
+        ]
+    )
+    op_metricas = "".join(
+        f'<option value="{met}">{METRICS[met].label} ({METRICS[met].direction()})</option>'
+        for met in por_metrica
+    )
 
     efeitos = []
-    for seg, intervals in resultados:
+    for met, seg, intervals in (
+        (met, seg, i) for met, lista in por_metrica.items() for seg, i in lista
+    ):
         pequenos = [
             r
             for r in intervals
@@ -418,13 +477,10 @@ def build_hub(
             else ""
         )
         grafico = (
-            f'<div class="cartao">{lift_chart(intervals, t)}<div class="legenda">'
-            f'<span><i style="background:{t.positive}"></i>aumenta o CTR</span>'
-            f'<span><i style="background:{t.negative}"></i>diminui o CTR</span>'
-            f'<span><i style="background:{t.neutral}"></i>não dá pra afirmar</span>'
-            "</div></div>"
+            f'<div class="cartao">{lift_chart(intervals, t, METRICS[met])}'
+            f"{_legenda(t, METRICS[met])}</div>"
         )
-        efeitos.append((seg, aviso + grafico + _tabela(seg, intervals)))
+        efeitos.append((seg, met, aviso + grafico + _tabela(seg, intervals)))
 
     cores = sorted(
         {c for s, _ in resultados for c in (x.dominant_color for x in s.specs)}
@@ -455,6 +511,8 @@ def build_hub(
 <header class="topo">
 <h1 id="titulo">Visão geral</h1>
 <span class="selo-demo">dados de demonstração</span>
+<label class="filtro" for="metrica">Métrica
+<select id="metrica">{op_metricas}</select></label>
 <label class="filtro" for="segmento">Ver
 <select id="segmento">{opcoes}</select></label>
 </header>
@@ -471,8 +529,9 @@ def build_hub(
 <div class="hero-in">
 <h2 style="font-size:clamp(28px,4.5vw,46px);line-height:1.05;max-width:16ch">
 O que faz um criativo <em style="font-style:normal;color:var(--glow)">performar</em></h2>
-<p>Quanto cada característica dos criativos muda o CTR, com o intervalo de confiança
-de cada resposta. Escolha um país ou uma plataforma no filtro do topo.</p>
+<p>Quanto cada característica dos criativos muda o CTR, o CPM e o CPC, com o
+intervalo de confiança de cada resposta. Escolha a métrica e o recorte (um país ou
+uma plataforma) nos filtros do topo.</p>
 </div></div>
 {kpis}
 <section class="secao"><header><h2>Em destaque</h2>
@@ -483,8 +542,10 @@ de cada resposta. Escolha um país ou uma plataforma no filtro do topo.</p>
 
 <section class="painel" id="aba-efeitos" hidden>
 <section class="secao"><header><h2>Lift de cada etiqueta</h2>
-<p>Barra = quanto o CTR muda com a característica. Linha = intervalo de 95%.</p></header>
-{_por_segmento(efeitos)}</section>
+<p>Barra = quanto a métrica muda com a característica, com todo o resto igual.
+Linha = intervalo de 95%. No CPM e no CPC, barra para a esquerda (mais barato) é boa.</p>
+</header>
+{_por_segmento_e_metrica(efeitos)}</section>
 </section>
 
 <section class="painel" id="aba-criativos" hidden>
@@ -498,7 +559,9 @@ de cada resposta. Escolha um país ou uma plataforma no filtro do topo.</p>
 <select id="f-formato" aria-label="Formato"><option value="">Todos os formatos</option>
 {op_formatos}</select>
 <select id="f-ordem" aria-label="Ordem"><option value="desc">Maior CTR primeiro</option>
-<option value="asc">Menor CTR primeiro</option></select>
+<option value="asc">Menor CTR primeiro</option>
+<option value="cpc">Menor CPC primeiro</option>
+<option value="cpm">Menor CPM primeiro</option></select>
 <span class="meta" id="total"></span>
 </div>
 <div class="grade" id="grade"></div>
@@ -585,10 +648,15 @@ def publish_hub(
     midia = pasta / "midia_diaria.csv"
     dims = _dimensions(midia) if midia.exists() else {}
     paises = load_countries(pasta)
-    resultados = [
-        (seg, compute_effects(seg.specs, seg.rows, paises, method, boot))
-        for seg in segments(specs, rows, dims)
-    ]
+    segs = segments(specs, rows, dims)
+    por_metrica = {
+        nome: [
+            (seg, compute_effects(seg.specs, seg.rows, paises, method, boot, metrica))
+            for seg in segs
+        ]
+        for nome, metrica in METRICS.items()
+    }
+    resultados = por_metrica["ctr"]
     imagens = pasta / "imagens"
     saida.mkdir(parents=True, exist_ok=True)
     if imagens.exists():
@@ -598,6 +666,7 @@ def publish_hub(
         creatives_json(specs, rows, dims),
         imagens.exists(),
         datetime.now(UTC),
+        por_metrica=por_metrica,
     )
     destino = saida / "index.html"
     destino.write_text(html, encoding="utf-8")

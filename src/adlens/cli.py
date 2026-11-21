@@ -181,7 +181,8 @@ def cmd_analisar(args: argparse.Namespace) -> int:
     print(
         f"{'etiqueta':<10}{'valor':<12}{'lift':>8}   intervalo de 95%     real?  efeito"
     )
-    for r in resultados:
+    # Do maior efeito para o menor, como no relatório e no hub
+    for r in sorted(resultados, key=lambda r: r.lift, reverse=True):
         faixa = f"[{r.low:+.1%} a {r.high:+.1%}]"
         real = "sim" if r.significant else "não"
         # "melhora"/"piora" já considera o sentido: no CPC, cair melhora
@@ -350,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
     painel = sub.add_parser("painel", help="gera a página do Hub (rascunho)")
     painel.add_argument("--pasta", type=Path, default=PASTA_PADRAO / "export")
     painel.add_argument("--saida", type=Path, help="padrão: PASTA/painel.html")
-    painel.add_argument("--tema", choices=sorted(THEMES), default="neutro")
+    painel.add_argument("--tema", choices=sorted(THEMES), default=TEMA_PADRAO)
     painel.set_defaults(func=cmd_painel)
 
     hub = sub.add_parser("hub", help="gera o hub (site com abas)")

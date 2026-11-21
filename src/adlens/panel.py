@@ -17,7 +17,7 @@ from pathlib import Path
 
 from adlens.analysis import BINARY_TAGS
 from adlens.export import CRIATIVOS_SCHEMA, EFEITOS_SCHEMA
-from adlens.report import THEMES, Theme, _css, lift_chart
+from adlens.report import TEMA_PADRAO, THEMES, Theme, _css, lift_chart
 
 
 def _ler(path: Path, schema: list[tuple[str, str, str]]) -> list[dict]:
@@ -118,6 +118,7 @@ _JS = """
 const DADOS = JSON.parse(document.getElementById('dados').textContent);
 const $ = (id) => document.getElementById(id);
 const inteiro = (n) => n.toLocaleString('pt-BR');
+const reais = (n) => 'R$ ' + inteiro(Math.round(n));
 const pct = (x) => (x * 100).toLocaleString('pt-BR',
   {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '%';
 
@@ -152,7 +153,7 @@ function porGrupo(lista, campo) {
     .map(([nome, itens]) => [nome, somar(itens)])
     .sort((a, b) => b[1].impressions - a[1].impressions)
     .map(([nome, t]) => [nome, inteiro(t.n), inteiro(t.impressions),
-                         pct(t.ctr), inteiro(Math.round(t.investment))]);
+                         pct(t.ctr), reais(t.investment)]);
 }
 
 function atualizar() {
@@ -164,7 +165,7 @@ function atualizar() {
   $('k-criativos').textContent = inteiro(t.n);
   $('k-impressoes').textContent = inteiro(t.impressions);
   $('k-ctr').textContent = pct(t.ctr);
-  $('k-investimento').textContent = inteiro(Math.round(t.investment));
+  $('k-investimento').textContent = reais(t.investment);
   preencher('t-plataforma', porGrupo(lista, 'platform'), 1);
   preencher('t-pais', porGrupo(lista, 'country'), 1);
   const top = lista.filter((c) => c.impressions >= 1000)
@@ -185,15 +186,24 @@ _CSS_EXTRA = """
 .filtros label{font-size:13px}
 .filtros select{display:block;margin-top:4px;padding:6px 8px;font:inherit}
 .rolagem{overflow-x:auto}
+.grafico-rola{overflow-x:auto}
+.grafico-rola .grafico{display:block}
+@media (max-width:640px){
+  .rolagem table{min-width:560px}
+  .grafico-rola .grafico{min-width:560px}
+  .grafico-rola::before{content:"Deslize para o lado para ver o gráfico inteiro →";
+    display:block;font-size:13px;font-weight:600;color:#5A5F7A;margin-bottom:8px}
+}
 .duas{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
 """
 
 
 def build_panel(
-    criativos: list[dict], efeitos: list[dict], theme: Theme = THEMES["neutro"]
+    criativos: list[dict], efeitos: list[dict], theme: Theme = THEMES[TEMA_PADRAO]
 ) -> str:
     """Monta o HTML da página, usando só as tabelas do contrato."""
     efeitos = latest_run(efeitos)
+    fonte = f'<link rel="stylesheet" href="{theme.font_url}">' if theme.font_url else ""
     execucao = f"execução {escape(efeitos[0]['run_id'])}" if efeitos else "sem execução"
     grupo = (
         "<thead><tr><th>{}</th><th>Criativos</th><th>Impressões</th>"
@@ -203,7 +213,7 @@ def build_panel(
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>adlens · painel</title><style>{_css(theme)}{_CSS_EXTRA}</style></head>
+<title>adlens · painel</title>{fonte}<style>{_css(theme)}{_CSS_EXTRA}</style></head>
 <body><div class="faixa"></div><main>
 <h1>adlens · painel de criativos</h1>
 <p class="sub">Rascunho da página do Hub · lê só as tabelas do contrato
@@ -226,7 +236,7 @@ def build_panel(
 <h2>O que puxa o CTR</h2>
 <p class="nota">Calculado com todos os criativos (os filtros não mudam este
 gráfico). Barra clara = não dá pra afirmar que o efeito é real.</p>
-{lift_chart(to_intervals(efeitos), theme)}
+<div class="grafico-rola">{lift_chart(to_intervals(efeitos), theme)}</div>
 
 <div class="duas">
 <div><h2>Por plataforma</h2><div class="rolagem">

@@ -63,3 +63,12 @@ def test_regressao_sem_criativos_suficientes_avisa(tmp_path, capsys):
     capsys.readouterr()
     assert main(["analisar", "--pasta", str(tmp_path)]) == 1
     assert "Poucos criativos" in capsys.readouterr().out
+
+
+def test_analisar_lista_do_maior_efeito_para_o_menor(tmp_path, capsys):
+    main(["gerar", "--n", "300", "--pasta", str(tmp_path)])
+    capsys.readouterr()
+    main(["analisar", "--pasta", str(tmp_path), "--metodo", "simples", "--boot", "20"])
+    linhas = [linha for linha in capsys.readouterr().out.splitlines() if "[" in linha]
+    lifts = [float(linha.split()[2].rstrip("%")) for linha in linhas]
+    assert lifts == sorted(lifts, reverse=True)

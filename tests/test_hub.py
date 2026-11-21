@@ -72,3 +72,37 @@ def test_comando_hub_gera_o_site_com_imagens(pasta, tmp_path):
 def test_hub_sem_dados_avisa_o_que_fazer(tmp_path, capsys):
     assert cli(["hub", "--pasta", str(tmp_path)]) == 1
     assert "adlens gerar" in capsys.readouterr().out
+
+
+# --- seletor de métrica e custo dos criativos ---------------------------------
+
+
+def test_hub_tem_seletor_de_metrica_com_as_tres(html):
+    assert '<select id="metrica">' in html
+    for nome in (
+        "CTR (maior é melhor)",
+        "CPM (menor é melhor)",
+        "CPC (menor é melhor)",
+    ):
+        assert nome in html
+
+
+def test_so_todos_com_ctr_comeca_visivel_entre_as_metricas(html):
+    assert 'data-seg="todos" data-met="ctr">' in html
+    assert 'data-seg="todos" data-met="cpc" hidden>' in html
+    assert 'data-seg="pais-BR" data-met="ctr" hidden>' in html
+
+
+def test_legenda_do_cpc_fala_em_melhorar_e_piorar(html):
+    assert "melhora o CPC" in html
+    assert "piora o CPC" in html
+
+
+def test_criativos_trazem_cpc_e_cpm():
+    specs = generate_specs(n=5, seed=1)
+    dados = json.loads(creatives_json(specs, simulate_performance(specs, seed=1), {}))
+    assert dados[0]["cpc"] > 0 and dados[0]["cpm"] > 0
+
+
+def test_ordem_por_custo_disponivel_na_aba_criativos(html):
+    assert '<option value="cpc">Menor CPC primeiro</option>' in html

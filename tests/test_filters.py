@@ -140,3 +140,11 @@ def test_relatorio_com_filtro_mostra_o_recorte(pasta):
     argv = ["relatorio", "--pasta", str(pasta), "--saida", str(saida)]
     assert cli([*argv, "--pais", "BR"]) == 0
     assert "recorte: país BR" in saida.read_text(encoding="utf-8")
+
+
+def test_erro_de_filtro_tem_nome_proprio_e_continua_sendo_valueerror(pasta):
+    from adlens.filters import FilterError
+
+    with pytest.raises(FilterError):
+        load_dataset(pasta, parse_filter("BRA"))
+    assert issubclass(FilterError, ValueError)

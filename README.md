@@ -84,7 +84,7 @@ adlens sozinho. São seis ferramentas, todas com os filtros acima:
 | `resumo_dos_dados` | Totais e o que existe para filtrar (países, plataformas, período) |
 | `efeito_das_caracteristicas` | Quanto cada etiqueta muda o CTR, com intervalo de 95% |
 | `distribuicao_das_etiquetas` | Quantos criativos e quanta mídia tem cada etiqueta (grupo pequeno = resultado frágil) |
-| `top_criativos` | Os melhores ou piores criativos, com as etiquetas (exemplos, não prova) |
+| `top_criativos` | Os melhores ou piores criativos (por CTR, CPC, CPM...), com as etiquetas (exemplos, não prova) |
 | `comparar` | O efeito de cada etiqueta em dois recortes (ex.: BR × MX) e se a diferença é real |
 | `gerar_relatorio` | Grava o relatório HTML |
 
@@ -122,6 +122,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Filtros por país, plataforma e período (linha de comando, relatório e MCP)
 - [x] MCP: distribuição das etiquetas, ranking de criativos e comparação de recortes
 - [x] Métricas além do CTR: CPM e CPC (linha de comando, relatório e MCP)
+- [x] Teste completo como usuário: seletor de métrica no hub, ranking por CPC e CPM, painel com a identidade do adlens e telas ajustadas para celular
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora

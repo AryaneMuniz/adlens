@@ -75,3 +75,12 @@ def test_efeito_real_vem_pronto_do_contrato():
         "significant": "false",
     }
     assert not to_intervals([linha])[0].significant
+
+
+def test_painel_usa_a_identidade_do_adlens_e_rola_no_celular(export):
+    criativos, efeitos = read_contract(export)
+    html = build_panel(criativos, efeitos)
+    assert "fonts.googleapis.com" in html  # fonte do tema adlens
+    assert ".rolagem table{min-width:560px}" in html
+    assert 'class="grafico-rola"' in html
+    assert "'R$ '" in html  # investimento com moeda

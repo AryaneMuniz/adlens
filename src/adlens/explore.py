@@ -24,13 +24,18 @@ from adlens.performance import PerformanceRow
 from adlens.regression import Z_95, benjamini_hochberg
 from adlens.synthetic import CreativeSpec
 
-# Como ordenar o ranking: nome que a pessoa usa -> campo do PerformanceRow
+# Como ordenar o ranking: nome que a pessoa usa -> valor de cada criativo
 RANK_BY = {
-    "ctr": "ctr",
-    "impressoes": "impressions",
-    "cliques": "clicks",
-    "investimento": "spend",
+    "ctr": lambda r: r.ctr,
+    "impressoes": lambda r: r.impressions,
+    "cliques": lambda r: r.clicks,
+    "investimento": lambda r: r.spend,
+    "cpm": lambda r: r.spend / r.impressions * 1000 if r.impressions else math.inf,
+    # sem clique, o CPC é "infinito": nunca aparece como o mais barato
+    "cpc": lambda r: r.spend / r.clicks if r.clicks else math.inf,
 }
+# Nessas, o melhor é o MENOR (custo); nas outras, o maior
+LOWER_IS_BETTER = {"cpm", "cpc"}
 
 
 def tags_of(spec: CreativeSpec) -> dict[str, str]:
@@ -162,6 +167,14 @@ class RankedCreative:
     ctr: float
     spend: float
 
+    @property
+    def cpm(self) -> float:
+        return self.spend / self.impressions * 1000 if self.impressions else 0.0
+
+    @property
+    def cpc(self) -> float:
+        return self.spend / self.clicks if self.clicks else 0.0
+
 
 def top_creatives(
     specs: list[CreativeSpec],
@@ -173,21 +186,23 @@ def top_creatives(
 ) -> list[RankedCreative]:
     """Os N melhores (ou, com `worst`, os N piores) criativos por uma métrica.
 
-    Só entra quem tem pelo menos `min_impressions` impressões: com pouca
-    entrega, o CTR é sorte. Empate desempata pelo creative_id (resultado
-    sempre igual para os mesmos dados).
+    "Melhor" depende da métrica: no CTR é o maior; no CPM e no CPC é o menor
+    (mais barato). Só entra quem tem pelo menos `min_impressions` impressões:
+    com pouca entrega, o número é sorte. Empate desempata pelo creative_id
+    (resultado sempre igual para os mesmos dados).
     """
     if by not in RANK_BY:
         raise ValueError(f"Ordenar por {by!r}? Use um de: {', '.join(RANK_BY)}")
     by_id = {r.creative_id: r for r in rows}
-    campo = RANK_BY[by]
+    valor = RANK_BY[by]
+    maior_primeiro = (by not in LOWER_IS_BETTER) != worst
     candidatos = [
         (s, by_id[s.creative_id])
         for s in specs
         if by_id[s.creative_id].impressions >= min_impressions
     ]
     candidatos.sort(key=lambda par: par[0].creative_id)  # desempate estável
-    candidatos.sort(key=lambda par: getattr(par[1], campo), reverse=not worst)
+    candidatos.sort(key=lambda par: valor(par[1]), reverse=maior_primeiro)
     return [
         RankedCreative(
             s.creative_id, tags_of(s), r.impressions, r.clicks, r.ctr, r.spend
