@@ -12,6 +12,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
+from adlens.analysis import CATEGORICAL_TAGS
 from adlens.confidence import bootstrap_lifts
 from adlens.report import THEMES, build_report, save_report
 from adlens.storage import load_dataset
@@ -25,6 +26,10 @@ mcp = MCPServer(
         "intervalo de confiança. Os dados de demonstração são sintéticos."
     ),
 )
+
+
+# Com o que cada etiqueta é comparada: {"cor": "azul", "formato": "quadrado"}
+REFERENCIAS = {nome: ref for nome, ref in CATEGORICAL_TAGS.values()}
 
 
 def _pasta_segura(pasta: str) -> Path:
@@ -54,16 +59,19 @@ def resumo_dos_dados(pasta: str = "data") -> dict:
 
 @mcp.tool()
 def efeito_das_caracteristicas(pasta: str = "data", sorteios: int = 300) -> list[dict]:
-    """Quanto cada característica do criativo muda o CTR (lift), com intervalo de 95%.
+    """Quanto cada característica do criativo muda o CTR, com intervalo de 95%.
 
-    `significativo` é falso quando o intervalo cruza o zero: nesse caso não
-    dá para afirmar que o efeito existe.
+    `lift` é relativo à `referencia`: 0.15 quer dizer CTR 15% maior que o
+    dos criativos de referência (sem a característica, cor azul ou formato
+    quadrado). `significativo` é falso quando o intervalo cruza o zero:
+    nesse caso não dá para afirmar que o efeito existe.
     """
     specs, rows, _ = load_dataset(_pasta_segura(pasta))
     return [
         {
             "etiqueta": r.tag,
             "valor": r.value,
+            "referencia": REFERENCIAS.get(r.tag, "não"),
             "lift": round(r.lift, 4),
             "intervalo_95": [round(r.low, 4), round(r.high, 4)],
             "significativo": r.significant,
