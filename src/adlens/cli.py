@@ -19,12 +19,13 @@ from adlens.media import save_media, simulate_media
 from adlens.panel import build_panel, read_contract
 from adlens.performance import PerformanceRow, save_csv, simulate_performance
 from adlens.render import render_all
-from adlens.report import THEMES, build_report, save_report
+from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
 from adlens.storage import load_dataset, load_specs, save_specs
 from adlens.synthetic import CreativeSpec, generate_specs
 from adlens.tagging import FakeTagger, PixelTagger, Tagger, tag_all
 
 PASTA_PADRAO = Path("data")
+EXTENSOES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov"}
 
 
 def _carregar(pasta: Path) -> tuple[list[CreativeSpec], list[PerformanceRow]] | None:
@@ -105,9 +106,12 @@ def cmd_relatorio(args: argparse.Namespace) -> int:
     specs, rows = dados
     intervalos = bootstrap_lifts(specs, rows, n_boot=args.boot)
     saida: Path = args.saida or pasta / "relatorio.html"
-    # Até 8 imagens de exemplo, com o caminho relativo ao relatório
-    pngs = sorted((pasta / "imagens").glob("*.png"))[:8]
-    imagens = [os.path.relpath(p, saida.parent).replace("\\", "/") for p in pngs]
+    # Até 12 criativos de exemplo (estáticos, GIFs ou vídeos), com o caminho
+    # relativo ao relatório
+    pecas = sorted(
+        p for p in (pasta / "imagens").glob("*") if p.suffix.lower() in EXTENSOES
+    )[:12]
+    imagens = [os.path.relpath(p, saida.parent).replace("\\", "/") for p in pecas]
     html = build_report(intervalos, specs, rows, imagens, THEMES[args.tema])
     print(f"OK: relatório salvo em {save_report(html, saida).resolve()}")
     return 0
@@ -171,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     relatorio.add_argument("--pasta", type=Path, default=PASTA_PADRAO)
     relatorio.add_argument("--saida", type=Path, help="padrão: PASTA/relatorio.html")
     relatorio.add_argument("--boot", type=int, default=300)
-    relatorio.add_argument("--tema", choices=sorted(THEMES), default="neutro")
+    relatorio.add_argument("--tema", choices=sorted(THEMES), default=TEMA_PADRAO)
     relatorio.set_defaults(func=cmd_relatorio)
 
     exportar = sub.add_parser("exportar", help="exporta as tabelas do contrato")

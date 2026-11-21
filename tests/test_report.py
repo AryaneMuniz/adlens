@@ -1,8 +1,10 @@
 """Testes do relatório HTML."""
 
+import pytest
+
 from adlens.confidence import LiftInterval, bootstrap_lifts
 from adlens.performance import simulate_performance
-from adlens.report import build_report, lift_chart, save_report
+from adlens.report import build_report, lift_chart, media_type, save_report
 from adlens.synthetic import generate_specs
 
 
@@ -50,3 +52,26 @@ def test_galeria_aparece_quando_ha_imagens():
 def test_salva_o_arquivo(tmp_path):
     caminho = save_report("<html></html>", tmp_path / "rel" / "relatorio.html")
     assert caminho.read_text(encoding="utf-8") == "<html></html>"
+
+
+@pytest.mark.parametrize(
+    ("arquivo", "tipo"),
+    [("a.png", "estático"), ("a.JPG", "estático"), ("a.gif", "GIF"),
+     ("a.mp4", "vídeo"), ("a.webm", "vídeo")],
+)  # fmt: skip
+def test_reconhece_o_tipo_do_criativo(arquivo, tipo):
+    assert media_type(arquivo) == tipo
+
+
+def test_video_e_gif_entram_na_galeria():
+    specs, rows, intervalos = _dados()
+    html = build_report(intervalos, specs, rows, images=["pecas/a.mp4", "pecas/b.gif"])
+    assert '<video src="pecas/a.mp4"' in html
+    assert 'data-tipo="GIF"' in html
+
+
+def test_destaque_mostra_o_maior_efeito():
+    specs, rows, intervalos = _dados()
+    maior = max((r for r in intervalos if r.significant), key=lambda r: r.lift)
+    html = build_report(intervalos, specs, rows)
+    assert f'<span class="nome">{maior.tag}: {maior.value}</span>' in html
