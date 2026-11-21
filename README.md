@@ -60,6 +60,20 @@ só com os números do recorte. Recortes com menos de 30 criativos são
 recusados, e um valor que não existe nos dados (ex.: `BRA`) gera um erro
 que lista os disponíveis.
 
+## Servidor MCP (agentes de IA)
+
+Com `uv run adlens-mcp`, um agente de IA (Claude, Copilot...) consulta o
+adlens sozinho. São seis ferramentas, todas com os filtros acima:
+
+| Ferramenta | Para quê |
+|---|---|
+| `resumo_dos_dados` | Totais e o que existe para filtrar (países, plataformas, período) |
+| `efeito_das_caracteristicas` | Quanto cada etiqueta muda o CTR, com intervalo de 95% |
+| `distribuicao_das_etiquetas` | Quantos criativos e quanta mídia tem cada etiqueta (grupo pequeno = resultado frágil) |
+| `top_criativos` | Os melhores ou piores criativos, com as etiquetas (exemplos, não prova) |
+| `comparar` | O efeito de cada etiqueta em dois recortes (ex.: BR × MX) e se a diferença é real |
+| `gerar_relatorio` | Grava o relatório HTML |
+
 ## Contrato de dados e página do Hub
 
 O adlens entrega duas tabelas com formato combinado: `adlens_criativos` (uma linha por anúncio) e `adlens_efeitos` (uma linha por etiqueta, com o intervalo de 95%). Os tipos seguem o padrão do BigQuery e cada tabela vem com o schema em JSON. Detalhes em [docs/contrato-de-dados.md](docs/contrato-de-dados.md).
@@ -92,6 +106,7 @@ Etiqueta errada não inventa efeito: mistura os grupos e **encolhe** o efeito re
 - [x] Regressão: efeito isolado de cada etiqueta, controlando país, peso igual por criativo e correção para muitos testes
 - [x] Regressão ligada à linha de comando, ao relatório, ao contrato, ao MCP e ao hub
 - [x] Filtros por país, plataforma e período (linha de comando, relatório e MCP)
+- [x] MCP: distribuição das etiquetas, ranking de criativos e comparação de recortes
 - [ ] Dados no BigQuery e execução na nuvem
 
 ## Autora
