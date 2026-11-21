@@ -78,16 +78,20 @@ def test_sorteios_fora_do_limite_da_erro(projeto, sorteios):
         efeito_das_caracteristicas(sorteios=sorteios)
 
 
-def test_efeito_traz_ctrs_e_tamanho_do_grupo(projeto):
+@pytest.mark.parametrize("metrica", ["ctr", "cpm", "cpc"])
+def test_efeito_traz_valores_e_tamanho_do_grupo(projeto, metrica):
     efeitos = {
         (e["etiqueta"], e["valor"]): e
-        for e in efeito_das_caracteristicas(metodo="simples", sorteios=50)
+        for e in efeito_das_caracteristicas(
+            metodo="simples", sorteios=50, metrica=metrica
+        )
     }
     rosto = efeitos[("rosto", "sim")]
     specs = load_specs(projeto / "data" / "criativos.csv")
     assert rosto["criativos"] == sum(s.has_face for s in specs)
-    # No simples, o lift é exatamente a conta entre os dois CTRs
-    lift = rosto["ctr_grupo"] / rosto["ctr_referencia"] - 1
+    assert rosto["metrica"] == metrica
+    # No simples, o lift é exatamente a conta entre os dois valores brutos
+    lift = rosto["valor_grupo"] / rosto["valor_referencia"] - 1
     assert lift == pytest.approx(rosto["lift"], abs=0.001)
 
 
@@ -96,8 +100,23 @@ def test_regressao_e_o_padrao_e_fica_mais_perto_do_gabarito(projeto):
     rosto = efeitos[("rosto", "sim")]
     assert rosto["metodo"] == "regressao"
     # A conta bruta mistura o rosto com as outras etiquetas; a regressão isola
-    bruto = rosto["ctr_grupo"] / rosto["ctr_referencia"] - 1
+    bruto = rosto["valor_grupo"] / rosto["valor_referencia"] - 1
     assert abs(rosto["lift"] - 0.15) < abs(bruto - 0.15)
+
+
+def test_no_cpc_cair_e_bom(projeto):
+    efeitos = {
+        (e["etiqueta"], e["valor"]): e
+        for e in efeito_das_caracteristicas(metrica="cpc")
+    }
+    rosto = efeitos[("rosto", "sim")]
+    assert rosto["lift"] < 0  # rosto traz mais clique pelo mesmo preço
+    assert rosto["bom"] is True
+
+
+def test_metrica_desconhecida_explica_as_opcoes(projeto):
+    with pytest.raises(ToolError, match="ctr, cpm, cpc"):
+        efeito_das_caracteristicas(metrica="roas")
 
 
 def test_metodo_desconhecido_da_erro(projeto):

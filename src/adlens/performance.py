@@ -1,7 +1,7 @@
 """Performance sintética com efeitos plantados.
 
 A gente decide de propósito quanto cada característica do criativo
-muda o CTR (os "efeitos plantados"). Depois, a análise do adlens tem que
+muda o CTR e o CPM (os "efeitos plantados"). Depois, a análise do adlens tem que
 redescobrir esses números sozinha: se acertar, o sistema funciona.
 """
 
@@ -16,7 +16,7 @@ from adlens.synthetic import CreativeSpec, generate_specs
 
 @dataclass(frozen=True)
 class PlantedEffects:
-    """O gabarito: quanto cada característica muda o CTR (em %)."""
+    """O gabarito: quanto cada característica muda o CTR e o CPM (em %)."""
 
     base_ctr: float = 0.012  # CTR de um criativo "neutro": 1,2%
     face: float = 0.15  # rosto: +15%
@@ -33,6 +33,11 @@ class PlantedEffects:
     )
     format: dict[str, float] = field(
         default_factory=lambda: {"vertical": 0.07, "quadrado": 0.0, "horizontal": -0.04}
+    )
+    # CPM: o leilão cobra menos pelo formato nativo do feed (vertical) e mais
+    # pelo que destoa (horizontal). Só o formato mexe no CPM.
+    cpm_format: dict[str, float] = field(
+        default_factory=lambda: {"vertical": -0.10, "quadrado": 0.0, "horizontal": 0.05}
     )
 
 
@@ -83,7 +88,8 @@ def simulate_performance(
     for spec in specs:
         impressions = rng.randint(20_000, 80_000)
         clicks = sample_clicks(rng, impressions, expected_ctr(spec, effects))
-        cpm = rng.uniform(12.0, 18.0)  # custo por mil impressões, em R$
+        # custo por mil impressões, em R$ (o formato muda o preço do leilão)
+        cpm = rng.uniform(12.0, 18.0) * (1 + effects.cpm_format[spec.format])
         spend = round(impressions / 1000 * cpm, 2)
         rows.append(PerformanceRow(spec.creative_id, impressions, clicks, spend))
     return rows

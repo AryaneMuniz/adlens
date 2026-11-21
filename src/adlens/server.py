@@ -14,11 +14,17 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from adlens.analysis import TagLift, analyze, build_database
 from adlens.confidence import Interval
-from adlens.explore import RANK_BY, compare_effects, tag_distribution, top_creatives
+from adlens.explore import (
+    RANK_BY,
+    compare_effects,
+    group_values,
+    tag_distribution,
+    top_creatives,
+)
 from adlens.filters import Filter, parse_filter
 from adlens.media import available_values
+from adlens.metrics import METRICS, Metric, get_metric
 from adlens.performance import PerformanceRow
 from adlens.regression import METHODS, compute_effects
 from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
@@ -31,7 +37,9 @@ mcp = MCPServer(
         "Ferramentas do adlens, inteligência de criativos de anúncio. "
         "Use para dizer quais características dos criativos (rosto, produto, "
         "CTA, cor, formato) aumentam ou diminuem o CTR, sempre informando o "
-        "intervalo de confiança. O método padrão é a regressão, que isola "
+        "intervalo de confiança. Além do CTR (padrão), dá para analisar o "
+        "CPM e o CPC com metrica=cpm ou cpc: neles, lift NEGATIVO é bom "
+        "(ficou mais barato). O método padrão é a regressão, que isola "
         "cada etiqueta e controla o país. Para perguntas sobre um país, uma "
         "plataforma ou um período, use os filtros (pais, plataforma, "
         "data_inicio, data_fim); resumo_dos_dados lista o que existe para "
@@ -89,27 +97,39 @@ def _carregar(
         raise ToolError(f"Os dados têm um problema: {erro}") from erro
 
 
+def _metrica(nome: str) -> Metric:
+    """A métrica pelo nome; se não existir, explica para o agente."""
+    try:
+        return get_metric(nome)
+    except ValueError as erro:
+        raise ToolError(str(erro)) from erro
+
+
 def _analise(
-    base: Path, metodo: str, sorteios: int, filtro: Filter | None = None
-) -> tuple[list[CreativeSpec], list[PerformanceRow], list[Interval], list[TagLift]]:
+    base: Path,
+    metodo: str,
+    sorteios: int,
+    filtro: Filter | None = None,
+    metrica: Metric = METRICS["ctr"],
+) -> tuple[list[CreativeSpec], list[PerformanceRow], list[Interval], dict]:
     """A análise completa, guardada até algum CSV da pasta mudar.
 
-    O filtro entra na chave: outro recorte = outra análise.
+    O filtro e a métrica entram na chave: outro recorte = outra análise.
     """
     filtro = filtro or Filter()
     carimbo = tuple((p.name, p.stat().st_mtime_ns) for p in sorted(base.glob("*.csv")))
-    chave = (str(base), carimbo, metodo, sorteios, filtro)
+    chave = (str(base), carimbo, metodo, sorteios, filtro, metrica.name)
     if chave not in _cache:
         specs, rows, _ = _carregar(base, filtro)
         if len(_cache) >= MAX_CACHE:  # tira a mais antiga: a memória não cresce
             del _cache[next(iter(_cache))]
         try:
             efeitos = compute_effects(
-                specs, rows, load_countries(base), metodo, sorteios
+                specs, rows, load_countries(base), metodo, sorteios, metrica
             )
         except ValueError as erro:  # poucos criativos, etiquetas sempre juntas...
             raise ToolError(str(erro)) from erro
-        _cache[chave] = (specs, rows, efeitos, analyze(build_database(specs, rows)))
+        _cache[chave] = (specs, rows, efeitos, group_values(specs, rows, metrica))
     return _cache[chave]
 
 
@@ -154,12 +174,17 @@ def efeito_das_caracteristicas(
     pasta: str = "data",
     metodo: str = "regressao",
     sorteios: int = 200,
+    metrica: str = "ctr",
     pais: str = "",
     plataforma: str = "",
     data_inicio: str = "",
     data_fim: str = "",
 ) -> list[dict]:
-    """Quanto cada característica do criativo muda o CTR, com intervalo de 95%.
+    """Quanto cada característica muda o CTR (ou o CPM/CPC), com intervalo de 95%.
+
+    `metrica`: "ctr" (padrão, maior é melhor), "cpm" ou "cpc" (custo: menor é
+    melhor, então lift NEGATIVO é bom). `bom` já diz se o efeito ajuda,
+    considerando esse sentido (só quando `significativo`).
 
     `metodo`: "regressao" (padrão) isola cada etiqueta das outras e do país:
     o lift é "com todo o resto igual". "simples" só compara os grupos e pode
@@ -167,9 +192,9 @@ def efeito_das_caracteristicas(
 
     `lift` é relativo à `referencia`: 0.15 quer dizer CTR 15% maior que o
     dos criativos de referência (sem a característica, cor azul ou formato
-    quadrado). `ctr_grupo` e `ctr_referencia` são os CTRs brutos dos dois
-    lados (sem controle nenhum; na regressão o lift pode diferir deles, e é
-    justamente essa a correção), e `criativos` é quantos criativos estão no grupo: grupo
+    quadrado). `valor_grupo` e `valor_referencia` são a métrica bruta dos
+    dois lados (sem controle nenhum; na regressão o lift pode diferir deles,
+    e é justamente essa a correção), e `criativos` é quantos criativos estão no grupo: grupo
     pequeno = resultado menos confiável. `significativo` diz se dá para
     afirmar que o efeito existe (na regressão, já corrigido para muitas
     etiquetas testadas de uma vez). `sorteios` (só no simples) vai de 50 a
@@ -189,14 +214,14 @@ def efeito_das_caracteristicas(
             f"sorteios deve ficar entre {MIN_SORTEIOS} e {MAX_SORTEIOS} (recebi {sorteios})"
         )
     filtro = _filtro(pais, plataforma, data_inicio, data_fim)
+    m = _metrica(metrica)
     base = _pasta_segura(pasta)
-    _, _, intervalos, pontos = _analise(base, metodo, sorteios, filtro)
-    grupos = {(p.tag, p.value): p for p in pontos}
+    _, _, intervalos, grupos = _analise(base, metodo, sorteios, filtro, m)
 
     resultado = []
     for r in sorted(intervalos, key=lambda r: r.lift, reverse=True):
         g = grupos.get((r.tag, r.value))
-        if g is None:  # num recorte pequeno pode faltar o grupo de referência
+        if g is None:  # num recorte pequeno pode faltar o grupo
             continue
         resultado.append(
             {
@@ -206,8 +231,10 @@ def efeito_das_caracteristicas(
                 "lift": round(r.lift, 4),
                 "intervalo_95": [round(r.low, 4), round(r.high, 4)],
                 "significativo": r.significant,
-                "ctr_grupo": round(g.ctr, 5),
-                "ctr_referencia": round(g.ctr_reference, 5),
+                "bom": r.significant and (r.lift > 0) == m.higher_is_better,
+                "metrica": m.name,
+                "valor_grupo": round(g.metric_value, 5),
+                "valor_referencia": round(g.metric_reference, 5),
                 "criativos": g.creatives,
                 "metodo": metodo,
                 "recorte": filtro.describe(),
@@ -318,6 +345,7 @@ def comparar(
     b_data_inicio: str = "",
     b_data_fim: str = "",
     metodo: str = "regressao",
+    metrica: str = "ctr",
 ) -> dict:
     """Compara o efeito de cada etiqueta entre dois recortes, A e B.
 
@@ -328,6 +356,7 @@ def comparar(
     testadas de uma vez). `diferente` falso NÃO quer dizer "igual": pode ser
     só falta de dado. `criativos_em_comum` acima de zero (comum ao comparar
     períodos) deixa o teste otimista; o `aviso` diz quando isso acontece.
+    `metrica`: ctr (padrão), cpm ou cpc.
     """
     if metodo not in METHODS:
         raise ToolError(
@@ -340,9 +369,10 @@ def comparar(
             "Os recortes A e B são iguais. Mude ao menos um filtro, "
             'ex.: a_pais="BR" e b_pais="MX".'
         )
+    m = _metrica(metrica)
     base = _pasta_segura(pasta)
-    specs_a, _, efeitos_a, _ = _analise(base, metodo, 200, filtro_a)
-    specs_b, _, efeitos_b, _ = _analise(base, metodo, 200, filtro_b)
+    specs_a, _, efeitos_a, _ = _analise(base, metodo, 200, filtro_a, m)
+    specs_b, _, efeitos_b, _ = _analise(base, metodo, 200, filtro_b, m)
     em_comum = {s.creative_id for s in specs_a} & {s.creative_id for s in specs_b}
     resultado = {
         "recorte_a": filtro_a.describe(),
@@ -351,6 +381,7 @@ def comparar(
         "criativos_b": len(specs_b),
         "criativos_em_comum": len(em_comum),
         "metodo": metodo,
+        "metrica": m.name,
         "etiquetas": [
             {
                 "etiqueta": c.tag,
@@ -387,17 +418,19 @@ def gerar_relatorio(
     plataforma: str = "",
     data_inicio: str = "",
     data_fim: str = "",
+    metrica: str = "ctr",
 ) -> str:
     """Gera (ou atualiza) o relatório HTML da análise e devolve o caminho do arquivo.
 
-    Aceita os mesmos filtros do efeito_das_caracteristicas; o relatório
-    mostra o recorte no topo.
+    Aceita os mesmos filtros e a mesma `metrica` do efeito_das_caracteristicas;
+    o relatório mostra o recorte e a métrica no topo.
     """
     base = _pasta_segura(pasta)
     filtro = _filtro(pais, plataforma, data_inicio, data_fim)
-    specs, rows, intervalos, _ = _analise(base, "regressao", 200, filtro)
+    m = _metrica(metrica)
+    specs, rows, intervalos, _ = _analise(base, "regressao", 200, filtro, m)
     html = build_report(
-        intervalos, specs, rows, None, THEMES[TEMA_PADRAO], filtro.describe()
+        intervalos, specs, rows, None, THEMES[TEMA_PADRAO], filtro.describe(), m
     )
     return str(save_report(html, base / "relatorio.html"))
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
 from adlens.confidence import Interval
+from adlens.metrics import Metric
 from adlens.performance import PerformanceRow
 from adlens.regression import Z_95, benjamini_hochberg
 from adlens.synthetic import CreativeSpec
@@ -93,6 +94,58 @@ def tag_distribution(
             grupos.items(), key=lambda item: (ordem.index(item[0][0]), item[0][1])
         )
     ]
+
+
+# --- valor bruto de cada grupo, em qualquer métrica -------------------------
+
+
+@dataclass(frozen=True)
+class GroupValue:
+    """A métrica bruta de um grupo e a do grupo de referência (sem controle)."""
+
+    tag: str
+    value: str
+    reference: str
+    metric_value: float  # ex.: CPC de quem tem rosto
+    metric_reference: float  # ex.: CPC de quem não tem
+    creatives: int  # quantos criativos no grupo
+
+
+def group_values(
+    specs: list[CreativeSpec], rows: list[PerformanceRow], metric: Metric
+) -> dict[tuple[str, str], GroupValue]:
+    """A métrica de cada grupo (soma de cima / soma de baixo), com a referência.
+
+    É o "lado bruto" da comparação, para mostrar junto do lift. Grupo sem a
+    referência no recorte fica de fora.
+    """
+    by_id = {r.creative_id: r for r in rows}
+    somas: dict[tuple[str, str], list[float]] = {}  # (tag, valor) -> [cima, baixo, n]
+    for spec in specs:
+        row = by_id[spec.creative_id]
+        for tag, value in tags_of(spec).items():
+            g = somas.setdefault((tag, value), [0.0, 0.0, 0])
+            g[0] += getattr(row, metric.numerator)
+            g[1] += getattr(row, metric.denominator)
+            g[2] += 1
+
+    referencias = {name: "não" for name in BINARY_TAGS.values()}
+    referencias |= {name: ref for name, ref in CATEGORICAL_TAGS.values()}
+    resultado = {}
+    for (tag, value), (cima, baixo, n) in somas.items():
+        referencia = referencias[tag]
+        if value == referencia or (tag, referencia) not in somas:
+            continue
+        ref_cima, ref_baixo, _ = somas[(tag, referencia)]
+        resultado[(tag, value)] = GroupValue(
+            tag,
+            value,
+            referencia,
+            metric.ratio(cima, baixo),
+            metric.ratio(ref_cima, ref_baixo),
+            int(n),
+        )
+    return resultado
 
 
 # --- ranking ----------------------------------------------------------------

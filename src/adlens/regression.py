@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 from adlens.analysis import BINARY_TAGS, CATEGORICAL_TAGS
 from adlens.confidence import Interval, bootstrap_lifts
+from adlens.metrics import METRICS, Metric
 from adlens.performance import PerformanceRow, simulate_performance
 from adlens.synthetic import CreativeSpec, generate_specs
 
@@ -151,8 +152,10 @@ def fit_effects(
     specs: list[CreativeSpec],
     rows: list[PerformanceRow],
     country: dict[str, str] | None = None,
+    metric: Metric = METRICS["ctr"],
 ) -> list[Effect]:
-    """Efeito de cada etiqueta, isolado das outras e do país."""
+    """Efeito de cada etiqueta no `metric` (CTR, CPM ou CPC), isolado das
+    outras etiquetas e do país. A conta é a mesma: só muda o y."""
     by_id = {r.creative_id: r for r in rows}
     countries = [(country or {}).get(s.creative_id, "?") for s in specs]
     columns = _columns(specs, countries)
@@ -162,13 +165,8 @@ def fit_effects(
         )
 
     x = [_row_of(s, c, columns) for s, c in zip(specs, countries)]
-    # +0,5 clique e +1 impressão: evita log(0) num criativo sem nenhum clique
-    y = [
-        math.log(
-            (by_id[s.creative_id].clicks + 0.5) / (by_id[s.creative_id].impressions + 1)
-        )
-        for s in specs
-    ]
+    # Métrica "suavizada" (ver metrics.py): evita log(0) num criativo sem clique
+    y = [math.log(metric.smoothed(by_id[s.creative_id])) for s in specs]
 
     # Mínimos quadrados: beta = (XᵀX)⁻¹ Xᵀy
     k = len(columns) + 1
@@ -212,6 +210,7 @@ def compute_effects(
     country: dict[str, str] | None = None,
     method: str = "regressao",
     n_boot: int = 200,
+    metric: Metric = METRICS["ctr"],
 ) -> list[Interval]:
     """O efeito de cada etiqueta pelo método escolhido. Todas as telas usam esta.
 
@@ -219,11 +218,14 @@ def compute_effects(
       igual a cada criativo e corrige para muitos testes. `n_boot` não é usado.
     - "simples": a comparação de grupos com bootstrap (`n_boot` sorteios).
       Fica para comparar e para ensinar onde ela erra (ver realistic.py).
+
+    `metric`: CTR (padrão), CPM ou CPC. Atenção ao sentido: no CPM e no CPC,
+    lift negativo é bom (ficou mais barato).
     """
     if method == "regressao":
-        return list(fit_effects(specs, rows, country))
+        return list(fit_effects(specs, rows, country, metric))
     if method == "simples":
-        return list(bootstrap_lifts(specs, rows, n_boot=n_boot))
+        return list(bootstrap_lifts(specs, rows, n_boot=n_boot, metric=metric))
     raise ValueError(f"Método desconhecido: {method}. Use um de: {', '.join(METHODS)}")
 
 

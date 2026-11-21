@@ -17,6 +17,7 @@ from html import escape
 from pathlib import Path
 
 from adlens.confidence import Interval
+from adlens.metrics import METRICS, Metric
 from adlens.performance import PerformanceRow
 from adlens.synthetic import CreativeSpec
 
@@ -134,15 +135,23 @@ def _x(valor: float) -> float:
     return LARGURA / 2 + valor / ESCALA * (LARGURA / 2)
 
 
-def lift_chart(intervals: list[Interval], theme: Theme = THEMES["neutro"]) -> str:
-    """Gráfico de barras (SVG) do lift, com o intervalo de 95% como uma linha."""
+def lift_chart(
+    intervals: list[Interval],
+    theme: Theme = THEMES["neutro"],
+    metric: Metric = METRICS["ctr"],
+) -> str:
+    """Gráfico de barras (SVG) do lift, com o intervalo de 95% como uma linha.
+
+    A cor diz se o efeito é BOM ou RUIM, não se é positivo: no CPC, uma barra
+    para a esquerda (mais barato) é verde.
+    """
     ordenados = sorted(intervals, key=lambda r: r.lift, reverse=True)
     m = 150  # margem da esquerda, onde ficam os nomes
     altura = ALTURA_LINHA * len(ordenados) + 30
     zero = m + _x(0)
     abertura = (
         f'<svg class="grafico" viewBox="0 0 {m + LARGURA + 20} {altura}" '
-        f'width="100%" role="img" aria-label="Lift de cada etiqueta no CTR">'
+        f'width="100%" role="img" aria-label="Lift de cada etiqueta no {metric.label}">'
     )
     partes = [abertura]
     partes.append(
@@ -151,7 +160,8 @@ def lift_chart(intervals: list[Interval], theme: Theme = THEMES["neutro"]) -> st
     )
     for i, r in enumerate(ordenados):
         y = i * ALTURA_LINHA + 8
-        cor = theme.positive if r.lift >= 0 else theme.negative
+        bom = (r.lift >= 0) == metric.higher_is_better
+        cor = theme.positive if bom else theme.negative
         if not r.significant:
             cor = theme.neutral
         lado = "pos" if r.lift >= 0 else "neg"
@@ -317,16 +327,24 @@ _JS = """
 """
 
 
-def _destaques(intervals: list[Interval]) -> str:
-    """Os 3 maiores efeitos positivos e o maior negativo, entre os significativos."""
+def _destaques(intervals: list[Interval], metric: Metric = METRICS["ctr"]) -> str:
+    """Os 3 maiores efeitos bons e o maior ruim, entre os significativos.
+
+    "Bom" depende da métrica: no CTR é subir; no CPM e no CPC é cair.
+    """
     reais = [r for r in intervals if r.significant]
-    positivos = sorted((r for r in reais if r.lift > 0), key=lambda r: -r.lift)[:3]
-    negativos = sorted((r for r in reais if r.lift < 0), key=lambda r: r.lift)[:1]
+    sinal = 1 if metric.higher_is_better else -1  # inverte quando menor é melhor
+    positivos = sorted(
+        (r for r in reais if r.lift * sinal > 0), key=lambda r: -r.lift * sinal
+    )[:3]
+    negativos = sorted(
+        (r for r in reais if r.lift * sinal < 0), key=lambda r: r.lift * sinal
+    )[:1]
     if not positivos and not negativos:
         return '<p class="ic">Nenhum efeito deu pra afirmar com 95% de confiança.</p>'
     cartoes = []
     for i, r in enumerate(positivos + negativos):
-        classe = "destaque neg" if r.lift < 0 else "destaque"
+        classe = "destaque neg" if r.lift * sinal < 0 else "destaque"
         cartoes.append(
             f'<div class="{classe} entra" style="--i:{i}">'
             f'<span class="valor">{_pct(r.lift)}</span>'
@@ -375,8 +393,12 @@ def build_report(
     images: list[str] | None = None,
     theme: Theme = THEMES[TEMA_PADRAO],
     recorte: str = "",
+    metric: Metric = METRICS["ctr"],
 ) -> str:
     """Monta o HTML completo do relatório.
+
+    `metric` é a métrica analisada (CTR, CPM ou CPC): muda os textos e o
+    sentido das cores (no CPM e no CPC, cair é bom).
 
     `recorte` é o filtro usado (ex.: "país BR · plataforma meta"); quando
     vem preenchido, aparece no topo para ninguém achar que é o geral.
@@ -398,6 +420,12 @@ def build_report(
         (f"{ctr:.2%}".replace(".", ","), "CTR médio"),
         (f"R$ {investimento:,.0f}".replace(",", "."), "investimento"),
     ]
+    if not metric.higher_is_better:  # CPM ou CPC: mostra o custo médio também
+        custo = metric.ratio(
+            sum(getattr(r, metric.numerator) for r in rows),
+            sum(getattr(r, metric.denominator) for r in rows),
+        )
+        kpis.append((f"R$ {custo:.2f}".replace(".", ","), f"{metric.label} médio"))
     kpis_html = "".join(
         f'<div class="kpi entra" style="--i:{i}"><b>{v}</b><span>{t}</span></div>'
         for i, (v, t) in enumerate(kpis)
@@ -421,6 +449,7 @@ def build_report(
         )
 
     fonte = f'<link rel="stylesheet" href="{theme.font_url}">' if theme.font_url else ""
+    m = metric.label
     t = theme
 
     return f"""<!doctype html>
@@ -440,9 +469,10 @@ def build_report(
 <div class="hero-in">
 <div class="marca entra"><i></i>adlens</div>
 <h1 class="entra" style="--i:1">O que faz um criativo <em>performar</em></h1>
-<p class="entra" style="--i:2">Quanto cada característica muda o CTR, e o quanto dá
+<p class="entra" style="--i:2">Quanto cada característica muda o {m}, e o quanto dá
 pra confiar em cada resposta.</p>
 <div class="chips entra" style="--i:3"><span class="chip">intervalo de 95%</span>
+<span class="chip">{metric.label}: {metric.direction()}</span>
 {chip_recorte}{_chips_de_tipo(images)}</div>
 </div>
 </header>
@@ -451,14 +481,14 @@ pra confiar em cada resposta.</p>
 
 <section class="secao"><header><h2>Em destaque</h2>
 <p>Os maiores efeitos que dá pra afirmar com 95% de confiança.</p></header>
-{_destaques(intervals)}</section>
+{_destaques(intervals, metric)}</section>
 
 <section class="secao"><header><h2>Lift de cada etiqueta</h2>
-<p>Barra = quanto o CTR muda com a característica. Linha = intervalo de 95%.</p>
+<p>Barra = quanto o {m} muda com a característica. Linha = intervalo de 95%.</p>
 </header>
-<div class="cartao">{lift_chart(intervals, t)}
-<div class="legenda"><span><i style="background:{t.positive}"></i>aumenta o CTR</span>
-<span><i style="background:{t.negative}"></i>diminui o CTR</span>
+<div class="cartao">{lift_chart(intervals, t, metric)}
+<div class="legenda"><span><i style="background:{t.positive}"></i>melhora o {m}</span>
+<span><i style="background:{t.negative}"></i>piora o {m}</span>
 <span><i style="background:{t.neutral}"></i>não dá pra afirmar</span></div></div>
 </section>
 
@@ -471,8 +501,8 @@ pra confiar em cada resposta.</p>
 
 <section class="secao"><header><h2>Como ler</h2></header>
 <div class="como">
-<div><b>Lift</b><p>Quanto o CTR muda com a característica, com todo o resto igual
-(mesmas outras etiquetas, mesmo país). +15% = CTR 15% maior.</p></div>
+<div><b>Lift</b><p>Quanto o {m} muda com a característica, com todo o resto igual
+(mesmas outras etiquetas, mesmo país). +15% = {m} 15% maior ({metric.direction()}).</p></div>
 <div><b>Intervalo de 95%</b><p>A faixa onde o efeito real provavelmente está.
 Se cruza o zero, pode ser ruído.</p></div>
 <div><b>Efeito real?</b><p>“Sim” só com prova forte: como várias etiquetas são
