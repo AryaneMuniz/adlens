@@ -14,7 +14,7 @@ from mcp.server.mcpserver import MCPServer
 
 from adlens.analysis import CATEGORICAL_TAGS
 from adlens.confidence import bootstrap_lifts
-from adlens.report import THEMES, build_report, save_report
+from adlens.report import TEMA_PADRAO, THEMES, build_report, save_report
 from adlens.storage import load_dataset
 
 mcp = MCPServer(
@@ -99,7 +99,7 @@ def gerar_relatorio(pasta: str = "data") -> str:
     base = _pasta_segura(pasta)
     specs, rows, _ = load_dataset(base)
     html = build_report(
-        bootstrap_lifts(specs, rows), specs, rows, None, THEMES["neutro"]
+        bootstrap_lifts(specs, rows), specs, rows, None, THEMES[TEMA_PADRAO]
     )
     return str(save_report(html, base / "relatorio.html"))
 
