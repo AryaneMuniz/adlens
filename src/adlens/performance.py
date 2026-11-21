@@ -64,7 +64,7 @@ def expected_ctr(spec: CreativeSpec, effects: PlantedEffects) -> float:
     return effects.base_ctr * lift
 
 
-def _sample_clicks(rng: random.Random, impressions: int, ctr: float) -> int:
+def sample_clicks(rng: random.Random, impressions: int, ctr: float) -> int:
     """Sorteia os cliques com o "acaso" de uma campanha de verdade."""
     mean = impressions * ctr
     std = math.sqrt(impressions * ctr * (1 - ctr))
@@ -82,7 +82,7 @@ def simulate_performance(
     rows = []
     for spec in specs:
         impressions = rng.randint(20_000, 80_000)
-        clicks = _sample_clicks(rng, impressions, expected_ctr(spec, effects))
+        clicks = sample_clicks(rng, impressions, expected_ctr(spec, effects))
         cpm = rng.uniform(12.0, 18.0)  # custo por mil impressões, em R$
         spend = round(impressions / 1000 * cpm, 2)
         rows.append(PerformanceRow(spec.creative_id, impressions, clicks, spend))
